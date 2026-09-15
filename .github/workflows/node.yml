@@ -1,0 +1,180 @@
+name: Node CI
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build, Test & Coverage
+    runs-on: ubuntu-latest
+
+    # Values are throwaway test credentials, safe to keep in the workflow. `ORIGIN` matches the
+    # Playwright preview server (see playwright.config.ts -> port 4173).
+    env:
+      DATABASE_URL: mysql://root:password@127.0.0.1:3306/acore_manager_test
+      BETTER_AUTH_SECRET: test-better-auth-secret-change-me-0123456789abcdef
+      ORIGIN: http://localhost:4173
+      CI: 'true'
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: acore_manager_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -ppassword"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: 🛒 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🗂️ Prepare results dir
+        run: mkdir -p ci-results
+
+      # ---- Gates (continue-on-error so every result is collected for the summary) ----
+
+      - name: 🏗️ Build
+        id: build
+        continue-on-error: true
+        run: npm run build 2>&1 | tee ci-results/build.log
+
+      - name: 🏗️ Check (svelte-check)
+        id: check
+        continue-on-error: true
+        run: npm run check 2>&1 | tee ci-results/check.log
+
+      - name: 🔎 Lint
+        id: lint
+        continue-on-error: true
+        run: npm run lint 2>&1 | tee ci-results/lint.log
+
+      # Needed by BOTH the Vitest browser project (Playwright/Chromium) and the e2e suite,
+      # so it must run before the unit tests.
+      - name: 🌐 Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # Becomes meaningful once migrations exist under drizzle/. Harmless before that, and
+      # non-blocking either way.
+      - name: 🗄️ Apply database migrations
+        id: migrate
+        continue-on-error: true
+        run: npm run db:migrate 2>&1 | tee ci-results/migrate.log
+
+      # `test:unit` is `vitest` (watch mode), so `--run` is required for CI to terminate.
+      - name: 🧪 Tests (Vitest)
+        id: test
+        continue-on-error: true
+        run: npm run test:unit -- --run --reporter=json --outputFile=ci-results/vitest.json 2>&1 | tee ci-results/test.log
+
+      - name: 🧪 e2e (Playwright)
+        id: e2e
+        continue-on-error: true
+        run: npx playwright test --reporter=github,html 2>&1 | tee ci-results/e2e.log
+
+      # ---- Artifacts (always upload what exists) ----
+
+      - name: 📦 Upload build output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            .svelte-kit/output
+            build
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: 📦 Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: 📦 Upload CI logs + results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-results
+          path: ci-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # ---- Live per-run dashboard (job step summary) ----
+      # Built inline rather than via a helper script, so the pipeline has no hidden dependency.
+      # `outcome` (not `conclusion`) reflects a step's real result even under continue-on-error.
+      - name: 📊 Summarize results
+        if: always()
+        env:
+          R_BUILD: ${{ steps.build.outcome }}
+          R_CHECK: ${{ steps.check.outcome }}
+          R_LINT: ${{ steps.lint.outcome }}
+          R_MIGRATE: ${{ steps.migrate.outcome }}
+          R_TEST: ${{ steps.test.outcome }}
+          R_E2E: ${{ steps.e2e.outcome }}
+        run: |
+          set -uo pipefail
+
+          failed=0
+          {
+            echo "## CI summary"
+            echo
+            echo "| Gate | Result |"
+            echo "| --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          report() {
+            local label="$1" outcome="$2"
+            local mark="✅ pass"
+            case "$outcome" in
+              failure) mark="❌ fail"; failed=1 ;;
+              skipped) mark="⏭️ skipped" ;;
+              cancelled) mark="⚪ cancelled" ;;
+              "" ) mark="⚪ not run" ;;
+            esac
+            echo "| $label | $mark |" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          report "Build" "$R_BUILD"
+          report "Check (svelte-check)" "$R_CHECK"
+          report "Lint" "$R_LINT"
+          report "Database migrations" "$R_MIGRATE"
+          report "Tests (Vitest)" "$R_TEST"
+          report "e2e (Playwright)" "$R_E2E"
+
+          {
+            echo
+            if [ "$failed" -ne 0 ]; then
+              echo "**Result: failed.** See the per-gate logs in the \`ci-results\` artifact."
+            else
+              echo "**Result: all gates passed.**"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$failed"
