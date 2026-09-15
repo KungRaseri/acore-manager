@@ -2,9 +2,9 @@
 
 A server and player management website for AzerothCore (World of Warcraft 3.3.5a) servers.
 
-> **Status: early scaffolding.** This project is a recent `sv create` scaffold. The auth and
-> database foundations are in place, but the routes under `src/routes/demo/**` and the helpers
-> under `src/lib/vitest-examples/**` are scaffold demos, not product features. The AzerothCore
+> **Status: early scaffolding, with the plumbing in place.** Sign-in (Discord), the database
+> bootstrap and the container build all work. The remaining routes under `src/routes/demo/**` and the
+> helpers under `src/lib/vitest-examples/**` are scaffold demos, not product features. The AzerothCore
 > integration layer has not been built yet — see [Roadmap](#roadmap).
 
 ## Stack
@@ -16,7 +16,7 @@ A server and player management website for AzerothCore (World of Warcraft 3.3.5a
 | Styling     | Tailwind CSS 4 (CSS-first, no `tailwind.config.js`)                                                                  |
 | UI          | Skeleton v5 + Bits UI (headless primitives) + Lucide icons + Simple Icons brand marks — **installed, not yet wired** |
 | Database    | MySQL via Drizzle ORM + drizzle-kit (`mysql2` driver)                                                                |
-| Auth        | Better Auth                                                                                                          |
+| Auth        | Better Auth — Discord OAuth, email/password disabled                                                                 |
 | Build       | Vite 8                                                                                                               |
 | Test        | Vitest 4 (browser + node projects) + Playwright (e2e)                                                                |
 | Lint/format | ESLint (flat config) + Prettier (tabs, `printWidth` 100, Svelte + Tailwind plugins)                                  |
@@ -54,11 +54,13 @@ npm run dev -- --open
 `.env` is git-ignored (`.gitignore` ignores `.env` and `.env.*` but keeps `!.env.example`) — never
 commit it. Generate your own `BETTER_AUTH_SECRET` rather than using a placeholder:
 
-| Variable             | Purpose                                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`       | MySQL connection string, `mysql://user:password@host:port/database`                                           |
-| `ORIGIN`             | Site origin used by SvelteKit/Better Auth (e.g. `http://localhost:5173` dev, `http://localhost:4173` preview) |
-| `BETTER_AUTH_SECRET` | Better Auth signing secret — use 32+ characters of high entropy, and a different value per environment        |
+| Variable                | Purpose                                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`          | MySQL connection string, `mysql://user:password@host:port/database`                                                             |
+| `ORIGIN`                | Site origin used by SvelteKit/Better Auth (e.g. `http://localhost:5173` dev, `http://localhost:4173` preview)                   |
+| `BETTER_AUTH_SECRET`    | Better Auth signing secret — use 32+ characters of high entropy, and a different value per environment                          |
+| `DISCORD_CLIENT_ID`     | Discord OAuth application id — create one at [discord.com/developers/applications](https://discord.com/developers/applications) |
+| `DISCORD_CLIENT_SECRET` | Discord OAuth application secret                                                                                                |
 
 ## Scripts
 
@@ -84,20 +86,22 @@ gated. Note that `test:unit` runs Vitest in watch mode, so CI and one-shot runs 
 
 ## Project layout
 
-| Path                     | Role                                                                                                       |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `src/routes/`            | SvelteKit routes — pages, `+page.server.ts` loads and actions                                              |
-| `src/routes/layout.css`  | Tailwind 4 entry point (also the stylesheet Prettier uses for Tailwind class sorting)                      |
-| `src/hooks.server.ts`    | SvelteKit server hooks (Better Auth session handling)                                                      |
-| `src/lib/server/auth.ts` | Better Auth instance (server-only)                                                                         |
-| `src/lib/server/db/`     | `index.ts` (Drizzle client), `schema.ts` (project schema), `auth.schema.ts` (generated Better Auth tables) |
-| `src/lib/assets/`        | Assets imported by components                                                                              |
-| `src/app.html`           | HTML shell (where a Skeleton `data-theme` attribute goes)                                                  |
-| `static/`                | Served as-is from the site root                                                                            |
-| `.roo/skills/`           | Reusable agent skills — catalog in [`.roo/skills/README.md`](.roo/skills/README.md)                        |
-| `llms/`                  | Third-party reference corpora (`llms.txt`) — provenance in [`llms/README.md`](llms/README.md)              |
-| `.github/workflows/`     | CI                                                                                                         |
-| `AGENTS.md`              | Authoritative reference for agents and humans working here                                                 |
+| Path                     | Role                                                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `src/routes/`            | SvelteKit routes — pages, `+page.server.ts` loads and actions                                         |
+| `src/routes/layout.css`  | Tailwind 4 entry point (also the stylesheet Prettier uses for Tailwind class sorting)                 |
+| `src/hooks.server.ts`    | SvelteKit server hooks (Better Auth session handling)                                                 |
+| `src/lib/server/auth.ts` | Better Auth instance — `getAuth()`, server-only, built lazily                                         |
+| `src/lib/server/db/`     | `index.ts` (`getDb()`), `schema.ts` (project schema), `auth.schema.ts` (generated Better Auth tables) |
+| `migrate.mjs`            | Creates the database if missing, then applies migrations                                              |
+| `Dockerfile`             | Container image build (see [Deployment](#deployment))                                                 |
+| `src/lib/assets/`        | Assets imported by components                                                                         |
+| `src/app.html`           | HTML shell (where a Skeleton `data-theme` attribute goes)                                             |
+| `static/`                | Served as-is from the site root                                                                       |
+| `.roo/skills/`           | Reusable agent skills — catalog in [`.roo/skills/README.md`](.roo/skills/README.md)                   |
+| `llms/`                  | Third-party reference corpora (`llms.txt`) — provenance in [`llms/README.md`](llms/README.md)         |
+| `.github/workflows/`     | CI                                                                                                    |
+| `AGENTS.md`              | Authoritative reference for agents and humans working here                                            |
 
 ## Database and auth
 
@@ -106,8 +110,13 @@ gated. Note that `test:unit` runs Vitest in watch mode, so CI and one-shot runs 
 - `src/lib/server/db/auth.schema.ts` is **generated** — regenerate it with `npm run auth:schema`
   after changing the Better Auth config, and never hand-edit it.
 - Edit the schema → `npm run db:generate` → `npm run db:migrate` (or `db:push` while developing).
-- Keep database and auth construction lazy (build them on first use, not at module scope) so that
-  `vite build` — including SvelteKit's post-build analysis — does not need a live database.
+- Sign-in is **Discord only** — `src/routes/login/` starts the OAuth flow. Add
+  `<ORIGIN>/api/auth/callback/discord` as a redirect URI on the Discord application.
+- Keep database and auth construction lazy (`getDb()` / `getAuth()` build on first use, never at
+  module scope) so that `vite build` — including SvelteKit's post-build analysis — does not need a
+  live database. This is what lets the container image build without any secrets.
+- **Drizzle does not create the database.** Creating it is a separate one-time bootstrap handled by
+  `migrate.mjs`; `drizzle-kit migrate` alone fails against a database that does not exist yet.
 
 ## UI foundation
 
@@ -122,9 +131,35 @@ wired up yet. The planned arrangement is:
 See [`.roo/skills/ui-development/SKILL.md`](.roo/skills/ui-development/SKILL.md) and the
 [`llms/skeletondev/`](llms/skeletondev) reference for the full component and token inventory.
 
+## Deployment
+
+The app is deployed as a container, built from the repository root:
+
+```bash
+docker build -t acore-manager .
+```
+
+`@sveltejs/adapter-node` produces `build/`, and `docker-entrypoint.sh` bootstraps the database before
+starting the server:
+
+```bash
+node migrate.mjs      # create the database if needed, then apply migrations
+node build/index.js   # serve (PORT, default 3000)
+```
+
+The same two commands work outside Docker — that is exactly what the container runs.
+
+- `migrate.mjs` creates the database (`CREATE DATABASE IF NOT EXISTS`, utf8mb4) **before** running
+  Drizzle's migrator, retries while the database is still starting, and both steps are idempotent, so
+  restarts are no-ops.
+- Runtime environment: `DATABASE_URL`, `ORIGIN`, `BETTER_AUTH_SECRET`, `DISCORD_CLIENT_ID`,
+  `DISCORD_CLIENT_SECRET`. **`ORIGIN` must be the browser-facing origin**, or adapter-node rejects
+  cross-origin form submissions.
+- The image build needs no database and no secrets.
+
 ## Roadmap
 
-1. **Clean up the scaffold** — remove the `src/routes/demo/**` pages and `src/lib/vitest-examples/**`,
+1. **Finish cleaning the scaffold** — remove the remaining `/demo` routes and `src/lib/vitest-examples/**`,
    wire up Tailwind + Skeleton, and replace the placeholder theme.
 2. **Define the management domain** — accounts, GM levels, characters, bans, live operations.
 3. **AzerothCore integration** — deliberately deferred. Before any of it is built, document the

@@ -1,68 +1,66 @@
-# client/Dockerfile — SvelteKit client (@sveltejs/adapter-node)
+# acore-manager container image.
 #
-# This file lives in client/, but the build context MUST be the repo root so
-# the npm workspaces resolve. docker-compose.yml (and Coolify) build with:
-#   context: .          # repo root — required for the npm workspace layout
-#   dockerfile: client/Dockerfile
+# A single SvelteKit application (no workspaces, no separate client/server
+# packages) built with @sveltejs/adapter-node, plus a runtime database
+# bootstrap and migration step.
 #
-# Notes / assumptions:
-#   - The client imports @farminggame/shared as TypeScript source (workspace
-#     `main`/`exports` -> `src/index.ts`), so shared/ must be present at build
-#     and runtime (vite + the adapter-node output resolve it via node_modules).
-#   - adapter-node emits client/build/; the runtime runs `node build` with the
-#     prod deps present. We copy the full root node_modules (which contains the
-#     client's prod `dependencies` that SvelteKit externalises) — correct, if
-#     slightly larger than a `--omit=dev` prune.
-#   - ORIGIN / WS_URL / secrets are supplied by docker-compose at runtime.
-#   - Base image node:22-alpine (npm 10) avoids the npm >= 12 EALLOWGIT issue
-#     with the lockfile's git dependency (uWebSockets.js).
+# Build from the repository root:
+#
+#     docker build -t acore-manager .
+#
+# Required at runtime (see .env.example):
+#
+#     DATABASE_URL          mysql://user:password@host:3306/database
+#     ORIGIN                the public origin the browser uses, e.g. https://manager.example.com
+#     BETTER_AUTH_SECRET    32+ characters of high entropy
+#     DISCORD_CLIENT_ID     Discord OAuth application id
+#     DISCORD_CLIENT_SECRET Discord OAuth application secret
+#
+# ORIGIN must match the browser-facing URL, or adapter-node will reject
+# cross-origin form submissions. No database is needed at image build time.
 
-# ---- Stage 1: install the whole workspace + build the client ----
+# ---- Stage 1: build ---------------------------------------------------------
 FROM node:22-alpine AS build
 
 WORKDIR /app
 
-# Install first so layer caching works when only sources change.
-COPY package.json package-lock.json ./
-COPY tsconfig.base.json ./
-COPY shared/package.json shared/package.json
-COPY engine/package.json engine/package.json
-COPY server/package.json server/package.json
-COPY client/package.json client/package.json
-
+# Install first so the layer cache survives source changes. The lockfile
+# requires Node ^20.19 || ^22.13 || >=24 and `.npmrc` sets engine-strict, so the
+# base image must satisfy that.
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 
-# Copy the workspace sources the client build needs (shared is consumed as TS
-# source; engine is copied for node_modules symlink consistency).
-COPY shared ./shared
-COPY engine ./engine
-COPY client ./client
+# Build. .dockerignore keeps node_modules, .svelte-kit, .git and .env out of the
+# context, so no local secrets reach a layer.
+COPY . .
+RUN npm run build
 
-# Ensure .svelte-kit types exist (npm ci runs the client `prepare` script, which
-# already swallows errors — this makes the sync explicit), then vite build.
-RUN npm run prepare --workspace client
-RUN npm run build --workspace client
+# Guarantee the migrations directory exists even before the first migration is
+# generated, so the runtime copy below cannot fail.
+RUN mkdir -p drizzle
 
-# ---- Stage 2: runtime ----
+# ---- Stage 2: runtime -------------------------------------------------------
 FROM node:22-alpine AS runtime
 
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=3000
 
-# Prod deps: copy the full node_modules (contains the client's `dependencies`
-# that adapter-node externalises) + the shared/engine sources behind the
-# workspace symlinks.
+# node_modules is kept deliberately: migrate.mjs needs drizzle-orm and mysql2 at
+# runtime, and this app declares no `dependencies` (adapter-node bundles the
+# rest into build/). A production prune would break the migration step.
 COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/shared ./shared
-COPY --from=build /app/engine ./engine
+COPY --from=build /app/package.json ./package.json
 
-# The built SvelteKit app (adapter-node output).
-COPY --from=build /app/client/package.json ./client/package.json
-COPY --from=build /app/client/build ./client/build
+# adapter-node output, plus the migration tooling used by the entrypoint.
+COPY --from=build /app/build ./build
+COPY --from=build /app/drizzle ./drizzle
+COPY --from=build /app/migrate.mjs ./migrate.mjs
+COPY --from=build /app/docker-entrypoint.sh ./docker-entrypoint.sh
 
-WORKDIR /app/client
+RUN chmod +x ./docker-entrypoint.sh
 
 EXPOSE 3000
 
-CMD ["node", "build"]
+ENTRYPOINT ["./docker-entrypoint.sh"]

@@ -39,7 +39,9 @@ description: Use when building or changing SvelteKit routes, pages, layouts, com
   - `$effect` → browser only (never runs during SSR); may return a teardown function. **Don't set state inside effects** — prefer `$derived`.
   - `$props` → destructure with fallbacks; `$bindable` for two-way bound props.
 - **Runes mode is forced** for every file outside `node_modules` by the `compilerOptions.runes` function in [`vite.config.ts`](../../../vite.config.ts). Do not write legacy `export let` / `$:` syntax.
-- **Adapter is `@sveltejs/adapter-auto`** — not adapter-node. There is no mdsvex and no preset deploy target.
+- **Adapter is `@sveltejs/adapter-node`.** The app is deployed as a Node server (see `Dockerfile`), where
+  the runtime entrypoint is `node build/index.js`. Set `ORIGIN` to the browser-facing origin, or
+  adapter-node rejects cross-origin form submissions. There is no mdsvex in this project.
 - **Environment:** a single `.env` at the repository root. Import variables server-side through `$env/dynamic/private` (or `$env/static/private` for build-time constants) and only from server-only code.
 - **Server-only modules:** `$env/*/private` and `$lib/server` may only be imported by server-only code — `hooks.server.*`, `+page.server.*`, `+server.*`, `*.server.*`, or within `$lib/server` itself. SvelteKit fails the build if public-facing code reaches them, even indirectly.
 - **Tailwind v4 is CSS-first:** there is no `tailwind.config.js`. The entry point is [`src/routes/layout.css`](../../../src/routes/layout.css).

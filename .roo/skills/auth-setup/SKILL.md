@@ -30,15 +30,18 @@ description: Use when working with authentication — Better Auth configuration,
 - [`src/hooks.server.ts`](../../../src/hooks.server.ts) — where auth is wired into requests.
 - [`src/app.d.ts`](../../../src/app.d.ts) — ambient types, including `App.Locals`.
 - [`src/lib/server/db/auth.schema.ts`](../../../src/lib/server/db/auth.schema.ts) — the **generated** `user`/`session`/`account`/`verification` tables.
-- [`src/routes/demo/better-auth/`](../../../src/routes/demo/better-auth) — the scaffold's demo sign-in flow (a placeholder, not the real auth UX).
+- [`src/routes/login/`](../../../src/routes/login) — the sign-in route: a form action that asks Better Auth for the Discord authorization URL and redirects to it.
 
 ## Key facts
 
+- **The only sign-in provider is Discord.** `getAuth()` configures `socialProviders.discord` from `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`; `emailAndPassword` is **not** enabled. The Discord application must list `<ORIGIN>/api/auth/callback/discord` as a redirect URI.
 - **Core schema** is `user`, `session`, `account`, `verification` — the tables in `auth.schema.ts`. It is **generated**: regenerate with `npm run auth:schema` and never hand-edit it.
 - **Drizzle adapter** points at this project's MySQL Drizzle client. The adapter's `provider` must match the database dialect (`mysql`), not `pg`/`postgresql`.
 - **SvelteKit integration:** the `sveltekitCookies` plugin must remain the **last** entry in the plugins array, and the handler is wired through `src/hooks.server.ts`.
 - **Server-side session access:** read the session from `event.locals` in server code (types in `src/app.d.ts`); hooks populate it.
 - The `auth:schema` script runs the Better Auth CLI against `src/lib/server/auth.ts` and writes `src/lib/server/db/auth.schema.ts`.
+- **The CLI needs the module to expose `auth.options`.** `getAuth()` is the app's entry point, but the CLI reads `export const auth` (or a default export) and then uses `.options` off it. `src/lib/server/auth.ts` therefore exports `auth` as a plain object with an `options` getter that calls `getAuth()`. It cannot be a `Proxy`: the CLI loads the config through `c12`, which merges the loaded value with `defu`, and `defu` copies own enumerable properties only — a proxy over an empty target is flattened to `{}` and the CLI reports that it could not read the config.
+- `auth.schema.ts` is listed in `.prettierignore`: the CLI writes its own formatting (2-space indents, double quotes), so `npm run lint` would fail on every regeneration otherwise.
 
 ## Steps
 
@@ -50,7 +53,7 @@ description: Use when working with authentication — Better Auth configuration,
 
 ## Rules
 
-- Construct the auth instance **lazily** (on first use), never at module scope — the build must stay DB-free.
+- Construct the auth instance **lazily** through `getAuth()`, never at module scope — the build must stay DB-free.
 - `sveltekitCookies` stays last in the plugins array.
 - Auth tables are generated; treat `auth.schema.ts` as build output, not as source.
 - Keep auth code in `src/lib/server/`; never import it from client-side component code.

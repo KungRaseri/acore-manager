@@ -1,13 +1,16 @@
 #!/bin/sh
+#
+# Container entrypoint for acore-manager.
+#
+# Bootstraps the database and applies migrations, then starts the SvelteKit
+# server produced by @sveltejs/adapter-node.
+#
+# The migration step is idempotent (CREATE DATABASE IF NOT EXISTS plus Drizzle's
+# `__drizzle_migrations` journal), so restarting the container is a no-op.
 set -e
 
-# server/docker-entrypoint.sh — runs Drizzle migrations (root migrate.mjs, no
-# drizzle-kit needed at runtime), then boots the Colyseus game server with tsx.
-# Idempotent: migrate() records applied migrations in __drizzle_migrations, so
-# restarting the container is a no-op.
-
-echo "[entrypoint] Running database migrations..."
+echo "[entrypoint] Bootstrapping database and applying migrations..."
 node /app/migrate.mjs
-echo "[entrypoint] Migrations complete. Starting application..."
 
-exec npx tsx src/index.ts
+echo "[entrypoint] Starting acore-manager..."
+exec node /app/build/index.js

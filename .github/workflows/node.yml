@@ -75,12 +75,12 @@ jobs:
       - name: 🌐 Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      # Becomes meaningful once migrations exist under drizzle/. Harmless before that, and
-      # non-blocking either way.
-      - name: 🗄️ Apply database migrations
+      # Exercises the same bootstrap the container entrypoint runs: creates the database if it is
+      # missing, then applies migrations. Non-blocking while no migrations exist yet.
+      - name: 🗄️ Bootstrap database and apply migrations
         id: migrate
         continue-on-error: true
-        run: npm run db:migrate 2>&1 | tee ci-results/migrate.log
+        run: node migrate.mjs 2>&1 | tee ci-results/migrate.log
 
       # `test:unit` is `vitest` (watch mode), so `--run` is required for CI to terminate.
       - name: 🧪 Tests (Vitest)

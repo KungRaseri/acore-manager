@@ -23,7 +23,8 @@ Steps:
 2. 🏗️ **Build** (`npm run build`) → 🏗️ **Check** (`npm run check`, the type gate) → 🔎 **Lint** (`npm run lint`)
 3. 🌐 **Install Playwright browsers** (`chromium --with-deps`) — required by the Vitest **browser**
    project as well as the e2e suite, so it runs _before_ the unit tests
-4. 🗄️ **Database migrations** (`npm run db:migrate`) — inert until migrations exist under `drizzle/`
+4. 🗄️ **Database bootstrap + migrations** (`node migrate.mjs`) — creates the database if missing, then
+   migrates; warns (without failing) while no migrations exist under `drizzle/`
 5. 🧪 **Tests** (`npm run test:unit -- --run --reporter=json --outputFile=ci-results/vitest.json`)
 6. 🧪 **e2e** (`npx playwright test --reporter=github,html`)
 7. 📦 **Artifacts** (always): `build-output`, `playwright-report`, `ci-results`
@@ -35,14 +36,14 @@ run's outcome.
 
 ### Gates
 
-| Gate                | Command                      | Notes                                                          |
-| ------------------- | ---------------------------- | -------------------------------------------------------------- |
-| Build               | `npm run build`              | Vite production build                                          |
-| Check               | `npm run check`              | `svelte-kit sync` + `svelte-check`. **This is the type gate.** |
-| Lint                | `npm run lint`               | `prettier --check .` then `eslint .`                           |
-| Database migrations | `npm run db:migrate`         | No migrations exist yet, so this is a no-op                    |
-| Tests               | `npm run test:unit -- --run` | `--run` is required: the script is `vitest` in watch mode      |
-| e2e                 | `npx playwright test`        | Runs the preview server via `playwright.config.ts`             |
+| Gate               | Command                      | Notes                                                          |
+| ------------------ | ---------------------------- | -------------------------------------------------------------- |
+| Build              | `npm run build`              | Vite production build                                          |
+| Check              | `npm run check`              | `svelte-kit sync` + `svelte-check`. **This is the type gate.** |
+| Lint               | `npm run lint`               | `prettier --check .` then `eslint .`                           |
+| Database bootstrap | `node migrate.mjs`           | Same script the container entrypoint runs; no-op-safe          |
+| Tests              | `npm run test:unit -- --run` | `--run` is required: the script is `vitest` in watch mode      |
+| e2e                | `npx playwright test`        | Runs the preview server via `playwright.config.ts`             |
 
 There is **no coverage gate** in this project — the `coverage` script does not exist and no coverage
 is uploaded.
@@ -66,6 +67,7 @@ Artifacts upload with `if: always()`, so a failed run still gives you the logs.
   outside of interactive local use.
 - **`npm ci` fails on the lockfile**: `.npmrc` sets `engine-strict=true` and some transitive
   dependencies require Node `^20.19.0 || ^22.13.0 || >=24`. Use a supported Node release.
-- **Database step fails**: `db:migrate` needs `drizzle.config.ts` to resolve `DATABASE_URL` and needs
-  migrations to exist. The MySQL service is provided for when they do; the step is non-blocking meanwhile.
+- **Database step fails**: `node migrate.mjs` needs `DATABASE_URL`. It creates the database itself, but
+  warns when there are no migrations yet. The MySQL service is provided for when they exist; the step is
+  non-blocking meanwhile.
 - **Per-run details**: Actions tab → the run → **Summary** (step summary) and **Artifacts**.

@@ -5,6 +5,12 @@ yarn.lock
 bun.lock
 bun.lockb
 
+# Generated
+# `npm run auth:schema` writes this with the Better Auth CLI's own formatting
+# (2-space indents, double quotes), so Prettier must not rewrite it or every
+# regeneration would fail `npm run lint`.
+src/lib/server/db/auth.schema.ts
+
 # Miscellaneous
 /static/
 /drizzle/

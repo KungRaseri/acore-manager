@@ -8,7 +8,7 @@ acore-manager is a **server and player management website for AzerothCore** (Wor
 
 - Application code lives in [`src/`](src) (routes under [`src/routes/`](src/routes), server-only code under [`src/lib/server/`](src/lib/server)).
 - Reusable **agent skills** live in [`.roo/skills/`](.roo/skills) and their third-party `llms.txt` reference corpus in [`llms/`](llms) — see [Skills & reference material](#skills--reference-material).
-- **Status: early scaffolding.** This is a recent `sv create` scaffold. Auth and database foundations exist; the demo routes and test examples are placeholders — see [Scaffold placeholders to replace](#scaffold-placeholders-to-replace).
+- **Status: early scaffolding, with the auth and database plumbing already in place.** The app builds and deploys (see [Deployment](#deployment)); Discord sign-in and the database bootstrap work. The remaining demo routes and test examples are placeholders — see [Scaffold placeholders to replace](#scaffold-placeholders-to-replace).
 - **The AzerothCore integration layer does not exist yet and is deliberately deferred.** Nothing in this document describes it beyond the roadmap entry, so do not assume any integration surface is available. Read [Roadmap](#roadmap) before starting integration work.
 
 ## Repository layout
@@ -20,8 +20,9 @@ acore-manager is a **server and player management website for AzerothCore** (Wor
 | [`src/hooks.server.ts`](src/hooks.server.ts)                           | SvelteKit server hooks                                                                     |
 | [`src/app.html`](src/app.html)                                         | HTML shell; where a Skeleton `data-theme` attribute belongs                                |
 | [`src/app.d.ts`](src/app.d.ts)                                         | SvelteKit ambient types (`App.Locals`, …)                                                  |
-| [`src/lib/server/auth.ts`](src/lib/server/auth.ts)                     | Better Auth instance (server-only)                                                         |
-| [`src/lib/server/db/index.ts`](src/lib/server/db/index.ts)             | Drizzle client                                                                             |
+| [`src/lib/server/auth.ts`](src/lib/server/auth.ts)                     | Better Auth instance — `getAuth()`, server-only, built lazily                              |
+| [`src/lib/server/db/index.ts`](src/lib/server/db/index.ts)             | Drizzle client — `getDb()`, built lazily                                                   |
+| [`src/routes/login/`](src/routes/login)                                | Discord sign-in route                                                                      |
 | [`src/lib/server/db/schema.ts`](src/lib/server/db/schema.ts)           | **Schema source of truth**                                                                 |
 | [`src/lib/server/db/auth.schema.ts`](src/lib/server/db/auth.schema.ts) | **Generated** Better Auth tables — never hand-edit                                         |
 | [`src/lib/assets/`](src/lib/assets)                                    | Assets imported by components                                                              |
@@ -30,6 +31,10 @@ acore-manager is a **server and player management website for AzerothCore** (Wor
 | [`llms/`](llms)                                                        | Third-party `llms.txt` reference corpora; provenance in [`llms/README.md`](llms/README.md) |
 | [`.github/workflows/`](.github/workflows)                              | CI                                                                                         |
 | [`drizzle.config.ts`](drizzle.config.ts)                               | Drizzle Kit config (schema path, MySQL dialect)                                            |
+| [`migrate.mjs`](migrate.mjs)                                           | Runtime bootstrap: creates the database if missing, then applies migrations                |
+| [`docker-entrypoint.sh`](docker-entrypoint.sh)                         | Container entrypoint: runs `migrate.mjs`, then starts the built server                     |
+| [`Dockerfile`](Dockerfile)                                             | Two-stage image build (adapter-node output plus the migration tooling)                     |
+| [`.dockerignore`](.dockerignore)                                       | Keeps `.env`, `node_modules` and VCS metadata out of image layers                          |
 
 ## Skills & reference material
 
@@ -44,11 +49,11 @@ The repo ships reusable, tool-agnostic **agent skills** that turn this document 
 ## Tech stack & tooling
 
 - **TypeScript**, strict, **ESM** everywhere (`"type": "module"`).
-- **SvelteKit 2** + **Svelte 5** (runes mode is forced for non-`node_modules` files in [`vite.config.ts`](vite.config.ts)); `@sveltejs/adapter-auto`.
+- **SvelteKit 2** + **Svelte 5** (runes mode is forced for non-`node_modules` files in [`vite.config.ts`](vite.config.ts)); **`@sveltejs/adapter-node`** — the app runs as a Node server, not on a managed platform.
 - **Tailwind CSS 4** — CSS-first, **no `tailwind.config.js`**; the entry is [`src/routes/layout.css`](src/routes/layout.css).
 - **UI foundation (installed, not yet wired):** **Skeleton v5** (`@skeletonlabs/skeleton` for the CSS core + themes, `@skeletonlabs/skeleton-svelte` for Svelte components), **Bits UI** (`bits-ui`) headless primitives, **Lucide** (`@lucide/svelte`) for general icons, **Simple Icons** (`simple-icons`) for brand marks.
 - **Drizzle ORM + drizzle-kit** on **MySQL** (`mysql2` driver; dialect `mysql`).
-- **Better Auth** for authentication.
+- **Better Auth** for authentication, with **Discord** as the only sign-in provider (email/password is not enabled).
 - **Vite 8** for dev/build; **Vitest 4** for tests (two projects: a browser project on Playwright/Chromium and a node project); **Playwright** for e2e.
 - **ESLint** (flat config; it reads `.gitignore` via `includeIgnoreFile`) + **Prettier** (tabs, single quotes, no trailing comma, `printWidth` 100, Svelte and Tailwind plugins).
 
@@ -86,11 +91,13 @@ it watches rather than exiting.
 
 A single `.env` at the repository root, loaded by SvelteKit. [`.env.example`](.env.example) is the template; `.gitignore` ignores `.env` and `.env.*` while keeping `!.env.example`.
 
-| Variable             | Purpose                                                                             |
-| -------------------- | ----------------------------------------------------------------------------------- |
-| `DATABASE_URL`       | MySQL connection string, `mysql://user:password@host:port/database`                 |
-| `ORIGIN`             | Site origin (`http://localhost:5173` in dev, `http://localhost:4173` for preview)   |
-| `BETTER_AUTH_SECRET` | Better Auth signing secret — 32+ characters of high entropy, unique per environment |
+| Variable                | Purpose                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`          | MySQL connection string, `mysql://user:password@host:port/database`                                               |
+| `ORIGIN`                | Site origin (`http://localhost:5173` in dev, `http://localhost:4173` for preview)                                 |
+| `BETTER_AUTH_SECRET`    | Better Auth signing secret — 32+ characters of high entropy, unique per environment                               |
+| `DISCORD_CLIENT_ID`     | Discord OAuth application id ([discord.com/developers/applications](https://discord.com/developers/applications)) |
+| `DISCORD_CLIENT_SECRET` | Discord OAuth application secret                                                                                  |
 
 Setup:
 
@@ -106,13 +113,15 @@ copy .env.example .env     # Windows (cp .env.example .env elsewhere)
 - **Schema source of truth:** [`src/lib/server/db/schema.ts`](src/lib/server/db/schema.ts). [`drizzle.config.ts`](drizzle.config.ts) points at it, reads `DATABASE_URL`, and sets `dialect: 'mysql'` with `strict: true`.
 - **Generated tables:** [`src/lib/server/db/auth.schema.ts`](src/lib/server/db/auth.schema.ts) is produced by `npm run auth:schema` (the Better Auth CLI). Regenerate it after changing the Better Auth config; never edit it by hand.
 - **Workflow:** edit `schema.ts` → `npm run db:generate` → `npm run db:migrate`. While iterating locally, `db:push` syncs the schema directly.
-- **Keep DB and auth construction lazy.** Build the Drizzle client and the auth instance on first use rather than at module scope, so `vite build` (including SvelteKit's post-build analysis) never needs a live database.
+- **Drizzle does not create the database.** Creating it is a separate, one-time bootstrap, handled by [`migrate.mjs`](migrate.mjs) — see [Deployment](#deployment). `drizzle-kit migrate` alone will fail against a database that does not exist yet.
+- **Keep DB and auth construction lazy.** `getDb()` and `getAuth()` construct on first use. Nothing may build a client or adapter at module scope, or `vite build` (including SvelteKit's post-build analysis) will need a live database.
 
 ## Auth architecture
 
 - The Better Auth instance is [`src/lib/server/auth.ts`](src/lib/server/auth.ts); it is wired into requests through [`src/hooks.server.ts`](src/hooks.server.ts), and ambient types live in [`src/app.d.ts`](src/app.d.ts).
 - The auth tables are the generated ones in `auth.schema.ts`, re-exported alongside the project schema.
-- The scaffold's sign-in/sign-up demo lives at [`src/routes/demo/better-auth/`](src/routes/demo/better-auth); it is a placeholder, not the real auth UX.
+- **Sign-in is Discord only.** [`src/routes/login/`](src/routes/login) posts to a form action that asks Better Auth for the Discord authorization URL and redirects the browser to it. The scaffold's email/password demo has been deleted.
+- The Discord application must list this redirect URI: `<ORIGIN>/api/auth/callback/discord`.
 - **Authorization is not designed yet.** There is no role model in this project. Do not assume admin/moderator concepts exist; introduce them deliberately when the management domain is defined.
 
 ## UI & design system
@@ -137,27 +146,46 @@ Rules for UI work:
 
 These came from `sv create` and are not product features. Delete them as the real features land:
 
-- [`src/routes/demo/`](src/routes/demo) — the `/demo` pages, the Better Auth demo, and the Playwright demo.
+- [`src/routes/demo/`](src/routes/demo) — the remaining `/demo` index and Playwright demo (the Better Auth demo is already gone).
 - [`src/lib/vitest-examples/`](src/lib/vitest-examples) — `greet.ts`, its specs, and the `Welcome` component.
 - The placeholder theme and unwired UI stack described above.
 
 ## Known issues
 
-- **The database and auth clients are constructed at module scope, which breaks `npm run build`.** The
-  build fails with `TypeError: Invalid URL` (`ERR_INVALID_URL`) thrown from `mysql2`, for the input
-  `mysql://user:password@host:port/db-name`.
-  - **Cause:** [`src/lib/server/db/index.ts`](src/lib/server/db/index.ts) calls
-    `mysql.createPool(env.DATABASE_URL)` at module scope, and
-    [`src/lib/server/auth.ts`](src/lib/server/auth.ts) builds the Better Auth instance at module scope
-    on top of it. SvelteKit's post-build `analyse` step imports the built server bundle, so importing
-    either one creates a connection pool — and with a placeholder `.env`, parsing that URL throws.
-  - **Fix (not yet applied):** make both lazy — expose a `getDb()` / `getAuth()` that constructs on
-    first call. That is the rule already stated in [Database workflow](#database-workflow) and
-    [Auth architecture](#auth-architecture); the code does not follow it yet.
-  - CI will not catch this, because the workflow sets a syntactically valid `DATABASE_URL`.
-- **No migrations exist yet**, so `npm run db:migrate` is a no-op until the first migration is generated.
+- **No migrations exist yet.** [`drizzle/`](drizzle) holds only an empty journal, so `migrate.mjs`
+  creates the database and then warns that there are no tables. Run `npm run db:generate` and commit the
+  result before expecting a working schema.
 - **The UI stack is installed but not wired**, and no theme has been chosen — see
   [UI & design system](#ui--design-system).
+- **No role or permission model exists.** Authorization is undesigned; do not assume admin or moderator
+  concepts are available.
+
+## Deployment
+
+The app ships as a container. `@sveltejs/adapter-node` produces `build/`, and the entrypoint bootstraps
+the database before starting the server:
+
+- [`Dockerfile`](Dockerfile) — two-stage build. The runtime stage keeps `node_modules` on purpose,
+  because [`migrate.mjs`](migrate.mjs) needs `drizzle-orm` and `mysql2` and this app declares no
+  `dependencies` for a production prune to retain.
+- [`docker-entrypoint.sh`](docker-entrypoint.sh) — runs `node migrate.mjs`, then `node build/index.js`.
+- [`migrate.mjs`](migrate.mjs) — creates the database (`CREATE DATABASE IF NOT EXISTS`, utf8mb4) before
+  running `drizzle-orm/mysql2/migrator`, retries while the database is still starting, and fails with an
+  actionable message when the user lacks `CREATE` rights. Both steps are idempotent, so restarts are no-ops.
+- [`.dockerignore`](.dockerignore) — keeps `.env` and `node_modules` out of the build context; without it
+  `COPY . .` would bake real credentials into an image layer.
+
+Runtime environment: `DATABASE_URL`, `ORIGIN`, `BETTER_AUTH_SECRET`, `DISCORD_CLIENT_ID`,
+`DISCORD_CLIENT_SECRET`. **`ORIGIN` must be the browser-facing origin** or adapter-node rejects
+cross-origin form submissions. The image build needs no database and no secrets — which is exactly why
+the DB and auth clients are lazy.
+
+Run it by hand the way the container does:
+
+```bash
+node migrate.mjs      # create the database if needed, then apply migrations
+node build/index.js   # serve (PORT, default 3000)
+```
 
 ## Conventions
 
@@ -174,8 +202,8 @@ These came from `sv create` and are not product features. Delete them as the rea
 
 ## Roadmap
 
-1. **Clean up the scaffold** — remove the placeholder routes and test examples, wire the Tailwind +
-   Skeleton stylesheet, and choose a theme.
+1. **Finish cleaning the scaffold** — remove the remaining `/demo` routes and `src/lib/vitest-examples/`,
+   wire the Tailwind + Skeleton stylesheet, and choose a theme.
 2. **Define the management domain** — accounts, GM levels, characters, bans, live operations — and the
    auth model that goes with it.
 3. **AzerothCore integration** — **deferred.** When it starts, document the integration surfaces and

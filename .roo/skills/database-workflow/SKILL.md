@@ -37,6 +37,9 @@ description: Use when changing the Drizzle schema, generating or applying migrat
 - `drizzle.config.ts` points at `src/lib/server/db/schema.ts`. `drizzle-kit` writes migrations to its default output directory (`drizzle/`) — the config does not override `out`.
 - `schema.ts` is the source of truth; `auth.schema.ts` is **generated output** and must not be edited by hand.
 - There is **one `.env` at the repository root** — not per-workspace env files.
+- **Drizzle does not create the database.** [`migrate.mjs`](../../../migrate.mjs) does: it runs
+  `CREATE DATABASE IF NOT EXISTS` (utf8mb4) and only then `drizzle-orm/mysql2/migrator`. The container
+  entrypoint runs it on every start, and both steps are idempotent.
 - The database client must be constructed lazily so `vite build` never needs a live database.
 
 ## Steps
@@ -53,7 +56,7 @@ description: Use when changing the Drizzle schema, generating or applying migrat
 
 - Keep the schema driver-agnostic within Drizzle's MySQL module — do not import `mysql2` (or any
   driver) into schema files; the driver belongs to the client.
-- Keep the DB client lazily constructed; never build it at module scope.
+- Keep the DB client lazily constructed via `getDb()`; never build it at module scope.
 - Never commit `.env`; keep `.env.example` in sync when a variable is added.
 - Commit generated migrations alongside the schema change, and update `AGENTS.md` if the workflow changes.
 - Do not add tables for features that are not designed yet. In particular, there is **no AzerothCore
