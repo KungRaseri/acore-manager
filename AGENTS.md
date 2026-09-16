@@ -22,7 +22,7 @@ acore-manager is a **server and player management website for AzerothCore** (Wor
 | [`src/app.d.ts`](src/app.d.ts)                                         | SvelteKit ambient types (`App.Locals`, …)                                                  |
 | [`src/lib/server/auth.ts`](src/lib/server/auth.ts)                     | Better Auth instance — `getAuth()`, server-only, built lazily                              |
 | [`src/lib/server/db/index.ts`](src/lib/server/db/index.ts)             | Drizzle client — `getDb()`, built lazily                                                   |
-| [`src/routes/login/`](src/routes/login)                                | Discord sign-in route                                                                      |
+| [`src/routes/(public)/login/`](<src/routes/(public)/login>)            | Discord sign-in route                                                                      |
 | [`src/lib/server/db/schema.ts`](src/lib/server/db/schema.ts)           | **Schema source of truth**                                                                 |
 | [`src/lib/server/db/auth.schema.ts`](src/lib/server/db/auth.schema.ts) | **Generated** Better Auth tables — never hand-edit                                         |
 | [`src/lib/assets/`](src/lib/assets)                                    | Assets imported by components                                                              |
@@ -33,6 +33,7 @@ acore-manager is a **server and player management website for AzerothCore** (Wor
 | [`src/lib/user.ts`](src/lib/user.ts)                                   | `CurrentUser` — the user shape the UI is allowed to see                                    |
 | [`src/lib/auth-client.ts`](src/lib/auth-client.ts)                     | Browser-side Better Auth client (sign-out; later account linking)                          |
 | [`src/lib/server/authz.ts`](src/lib/server/authz.ts)                   | Authorization — the one place that answers "may this user do this?"                        |
+| [`src/lib/server/accounts/`](src/lib/server/accounts)                  | Game accounts — console provisioning, SRP6 credential check, linking                       |
 | [`.roo/skills/`](.roo/skills)                                          | Reusable agent skills; catalog in [`.roo/skills/README.md`](.roo/skills/README.md)         |
 | [`llms/`](llms)                                                        | Third-party `llms.txt` reference corpora; provenance in [`llms/README.md`](llms/README.md) |
 | [`.github/workflows/`](.github/workflows)                              | CI                                                                                         |
@@ -150,6 +151,34 @@ The integration layer is server-only, lives in [`src/lib/server/acore/`](src/lib
 - **Databases** — [`src/lib/server/db/acore.ts`](src/lib/server/db/acore.ts) hands out plain `mysql2` pools (`getAcoreAuthDb()`, `getAcoreWorldDb()`, `getAcoreCharactersDb()`, `getAcoreDb()`). One `ACORE_DATABASE_URL` (server and credentials only) is shared; the database name is the only difference. Never declare these tables in Drizzle and never point `drizzle-kit` at them.
 - **Console** — [`src/lib/server/acore/soap.ts`](src/lib/server/acore/soap.ts) runs worldserver console commands over SOAP. It is an administrator credential with arbitrary command execution behind it, so: calls are serialised one at a time (the worldserver serves SOAP on a single thread), every call has a timeout (there is no server-side one), and nothing may import it from client-side code. `SOAP.Enabled = 1` and `SEC_ADMINISTRATOR` are prerequisites; both are documented in [`.env.example`](.env.example).
 
+## Game accounts
+
+Creating and linking a game account lives in [`src/lib/server/accounts/`](src/lib/server/accounts):
+
+- **Creation goes through the worldserver**, the way the official procedure describes it: the site runs
+  `account create <username> <password>` over the console (SOAP), so the server computes the SRP6 salt
+  and verifier itself. This project writes nothing into `acore_auth`; the only table it owns here is the
+  `game_account` mapping in [`schema.ts`](src/lib/server/db/schema.ts).
+- **Linking verifies the account's own password** against the salt and verifier already on the
+  `acore_auth.account` row — the same check the auth server performs at logon. It is read-only: no
+  password is set or reset, and no administrator command runs on the visitor's behalf. One message covers
+  "no such account" and "wrong password" on purpose, so the form cannot be used to enumerate accounts.
+- **The SRP6 check is transcribed, not invented.** [`srp6.ts`](src/lib/server/accounts/srp6.ts) documents
+  the two details that make it work — the game's own `N` and `g`, and `BigNumber`'s little-endian default
+  for both the digest and the stored verifier. Getting either wrong can only deny a valid attempt, never
+  grant an invalid one.
+- **Rules** ([`rules.ts`](src/lib/server/accounts/rules.ts)) mirror the server's limits
+  (`MAX_ACCOUNT_STR` 17, `MAX_PASS_STR` 16) and add two of ours: alphanumeric usernames, and no
+  whitespace in a _new_ password — both because the value is interpolated into a space-delimited console
+  command. Passwords for _existing_ accounts are deliberately left unconstrained, because they are hashed
+  and never sent to a console.
+- **The two steps are not transactional.** MySQL cannot commit across `acore_manager` and `acore_auth`, so
+  an account can exist on the realm without being linked. That state is recoverable by design: the link
+  form is the repair path, and the failure message says so.
+- **Unlinking deletes the mapping row only.** The game account, its characters and its password are
+  untouched. Deleting an account is a server operation with consequences the UI cannot undo, so it is not
+  offered.
+
 ## Auth architecture
 
 - The Better Auth instance is [`src/lib/server/auth.ts`](src/lib/server/auth.ts); it is wired into requests through [`src/hooks.server.ts`](src/hooks.server.ts), and ambient types live in [`src/app.d.ts`](src/app.d.ts).
@@ -193,11 +222,14 @@ These came from `sv create` and are not product features:
 - **Authorization is open.** `isServerManager()` admits every signed-in user, so `/admin` is reachable by
   anyone who can sign in. Deliberate, until the GM level on a linked game account can be read — see
   [Route groups & authorization](#route-groups--authorization).
-- **Nothing links a website user to a game account.** No table maps a Better Auth user to an
-  `acore_auth.account`, which is what blocks both the authorization rule and game account provisioning.
+- **The authorization rule is still missing.** `game_account` now maps a profile to a game account, so
+  what remains is reading the GM level for that account — see
+  [Route groups & authorization](#route-groups--authorization).
 - **The UI is dark by default.** `app.html` adds `.dark` unless the visitor opted into light mode;
   nothing follows `prefers-color-scheme`.
-- **Features do not use the database yet.** `drizzle/0000_*.sql` creates the Better Auth tables only.
+- **`game_account` has no migration yet.** The table is declared in `schema.ts` and the feature works
+  end to end once it exists, but `drizzle/` still holds only the Better Auth migration — run
+  `npm run db:generate` and commit the result.
 - **The console UI is deliberately read-only.** `/admin` can run `.server info`; there is no command box
   until access is decided by GM level.
 - **e2e tests need a live database and downloaded browsers**, so `npm run test:e2e` is not part of routine
@@ -247,9 +279,10 @@ node build/index.js   # serve (PORT, default 3000)
 
 1. **UI, theming and route groups.** _Done_ — the `azeroth` theme, the site chrome, the
    `(public)` / `(authenticated)` / `(admin)` groups and the centralized `authz` helper.
-2. **Game accounts — create and link.** The next piece of work. It needs a `game_account` mapping table
-   in `acore_manager` (unique on the game username) plus an explicit ownership policy, and offline SRP6
-   provisioning, since salt and verifier can be computed without running the auth server.
+2. **Game accounts — create and link.** _Done_ — creation runs the worldserver's own `account create`
+   over SOAP, linking verifies the account's password against the credentials stored in `acore_auth`, and
+   `game_account` records the result against a profile. Remaining: generate the migration, and decide what
+   staff tooling should exist around a link (who may detach one, and what happens to the account).
 3. **Close the authorization gate.** Read `gmlevel` from `acore_auth.account_access` for the linked game
    account, require `SEC_ADMINISTRATOR`, and replace `isServerManager()`.
 4. **Characters, bans and live operations** — the rest of the management domain, on top of

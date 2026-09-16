@@ -50,13 +50,20 @@ description: Use when changing the Drizzle schema, generating or applying migrat
 - **Never point `drizzle-kit` at an AzerothCore database**, and never declare its tables in a Drizzle
   schema. You would only ever declare a subset of a schema this large, and `db:push` would then try to
   drop everything it was not told about.
+- **`acore_auth.account` is read, never written.** Game accounts are created by the worldserver through
+  its own console command (`src/lib/server/accounts/service.ts`), and linking only _reads_ the `salt` and
+  `verifier` columns to check a password against them. There is deliberately no Drizzle schema for it.
+- **`game_account` is the project's second table** (see [`.roo/skills/auth-setup`](../auth-setup/SKILL.md)
+  for the auth tables). It maps a `user` row to a game account name, unique on that name. The table is
+  declared in `schema.ts`; its migration still has to be generated with `npm run db:generate`.
 - The database client must be constructed lazily so `vite build` never needs a live database.
 
 ## Steps
 
 1. Edit [`src/lib/server/db/schema.ts`](../../../src/lib/server/db/schema.ts). Consult the MySQL schema-declaration section of `llms/drizzle/llms.txt` for table and column syntax.
 2. If the change involves the auth tables, regenerate them first: `npm run auth:schema`.
-3. Generate a migration: `npm run db:generate`.
+3. Generate a migration: `npm run db:generate`. A schema change without a generated migration fails at
+   runtime, not at build time — the container applies only what is in `drizzle/`.
 4. Apply it: `npm run db:migrate`. While iterating locally, `npm run db:push` syncs the schema directly.
 5. Inspect data or structure with `npm run db:studio`.
 6. If `DATABASE_URL` errors, confirm it is set in `.env` at the repository root and uses the
@@ -69,6 +76,6 @@ description: Use when changing the Drizzle schema, generating or applying migrat
 - Keep the DB client lazily constructed via `getDb()`; never build it at module scope.
 - Never commit `.env`; keep `.env.example` in sync when a variable is added.
 - Commit generated migrations alongside the schema change, and update `AGENTS.md` if the workflow changes.
-- Do not add tables for features that are not designed yet. In particular, there is **no AzerothCore
-  integration schema** — that work is deferred and must be designed (including its security rules)
-  before tables are added.
+- Do not add tables for features that are not designed yet. `game_account` exists because the design was
+  settled first — create through the console, then link by verifying the credentials already stored on
+  the server — and the next integration table should be justified the same way, security rules included.
