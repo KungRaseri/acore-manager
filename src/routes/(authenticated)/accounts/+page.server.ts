@@ -2,7 +2,7 @@ import type { Actions, PageServerLoad } from './$types';
 import {
 	createGameAccount,
 	linkExistingGameAccount,
-	listGameAccounts,
+	listPlayerAccounts,
 	unlinkGameAccount,
 	type AccountResult
 } from '$lib/server/accounts/service';
@@ -27,17 +27,12 @@ function toState(action: ActionState['action'], result: AccountResult): ActionSt
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = requireUser(locals.user ? toCurrentUser(locals.user) : null, url.pathname);
-	const accounts = await listGameAccounts(user.id);
 
+	// The list comes from the realm, not from our own table: these are the
+	// accounts this Discord address owns, annotated with whether this profile has
+	// recorded the claim yet.
 	return {
-		accounts: accounts.map((account) => ({
-			id: account.id,
-			username: account.username,
-			// Formatted here, not in the template: a locale-dependent format
-			// would render differently on the server and in the browser and
-			// trip hydration.
-			linkedOn: account.createdAt.toISOString().slice(0, 10)
-		}))
+		accounts: await listPlayerAccounts(user.id, user.email)
 	};
 };
 

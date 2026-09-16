@@ -33,18 +33,23 @@
 	{/if}
 
 	<section class="flex flex-col gap-4">
-		<h2 class="h4">Linked accounts</h2>
+		<h2 class="h4">Your accounts on this realm</h2>
 
 		{#if data.accounts.length === 0}
 			<p
 				class="card border border-surface-200-800 preset-filled-surface-100-900 p-6 text-sm opacity-80"
 			>
-				No game accounts are linked to this profile yet. Create one below, or link an account you
-				already play on.
+				No game account on this realm carries your Discord address yet. Create one below, or link an
+				account you already play on.
 			</p>
 		{:else}
+			<p class="text-sm opacity-80">
+				Every account on the realm registered to your Discord address, whether or not it was created
+				through this site.
+			</p>
+
 			<ul class="flex list-none flex-col gap-3">
-				{#each data.accounts as account (account.id)}
+				{#each data.accounts as account (account.username)}
 					<li
 						class="flex flex-wrap items-center justify-between gap-3 card border border-surface-200-800 preset-filled-surface-100-900 p-4"
 					>
@@ -52,25 +57,50 @@
 							<SwordsIcon class="size-5 text-primary-500" />
 							<div class="flex flex-col">
 								<span class="font-medium">{account.username}</span>
-								<span class="text-xs opacity-70">Linked {account.linkedOn}</span>
+								<span class="text-xs opacity-70">
+									{#if account.email === ''}
+										No email on the account
+									{:else}
+										{account.email}
+									{/if}
+								</span>
 							</div>
 						</div>
-						<form method="POST" action="?/unlink">
-							<input type="hidden" name="accountId" value={account.id} />
-							<button
-								type="submit"
-								class="btn preset-outlined-error-500 btn-sm"
-								aria-label="Unlink {account.username}"
-							>
-								Unlink
-							</button>
-						</form>
+
+						{#if account.linked && account.linkId}
+							<div class="flex items-center gap-2">
+								<span class="badge preset-filled-success-500">Linked</span>
+								<form method="POST" action="?/unlink">
+									<input type="hidden" name="accountId" value={account.linkId} />
+									<button
+										type="submit"
+										class="btn preset-outlined-error-500 btn-sm"
+										aria-label="Unlink {account.username}"
+									>
+										Unlink
+									</button>
+								</form>
+							</div>
+						{:else}
+							<form method="POST" action="?/link">
+								<!-- No password: the account already carries this profile's
+								     Discord address, which is what proving it needs. -->
+								<input type="hidden" name="username" value={account.username} />
+								<button
+									type="submit"
+									class="btn preset-outlined-primary-500 btn-sm"
+									aria-label="Link {account.username}"
+								>
+									Link
+								</button>
+							</form>
+						{/if}
 					</li>
 				{/each}
 			</ul>
 			<p class="text-xs opacity-70">
-				Unlinking only removes the link. The game account, its characters and its password stay
-				exactly as they are.
+				Linking records the account on this profile; it changes nothing on the account itself, and
+				unlinking does not touch it either — its characters and password stay exactly as they are.
 			</p>
 		{/if}
 	</section>
@@ -116,20 +146,13 @@
 					/>
 				</label>
 
-				<!-- The third argument of `account create`, after the password. Shown so the
-				     visitor can see which address the account will carry, but not editable: it
-				     is the signed-in Discord address, which the action reads from the session
-				     rather than from this form. -->
+				<!-- The third argument of `account create`, after the password. Disabled
+				     on purpose: the address is the signed-in Discord one and can never be
+				     something the visitor types, so it is shown for information only and
+				     the action reads it from the session. -->
 				<label class="label">
 					<span class="label-text">Email address</span>
-					<input
-						class="input"
-						name="email"
-						type="email"
-						readonly
-						aria-readonly="true"
-						value={data.user.email}
-					/>
+					<input class="input" name="email" type="email" disabled value={data.user.email} />
 				</label>
 
 				<button type="submit" class="mt-2 btn justify-center preset-filled-primary-500">

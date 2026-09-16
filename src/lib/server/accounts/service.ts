@@ -14,12 +14,24 @@ import {
 } from './rules';
 import { verifierMatches } from './srp6';
 
+/*
+	Both columns are `NOT NULL DEFAULT ''` in AzerothCore's schema, so an address
+	is either a string or empty — never null. Empty is what a pre-website account
+	carries.
+*/
+
 /** The columns linking needs from AzerothCore's `account` table. */
 interface AccountCredentials extends RowDataPacket {
 	id: number;
-	email: string | null;
+	email: string;
 	salt: Buffer;
 	verifier: Buffer;
+}
+
+/** The columns the accounts list needs. */
+interface AccountSummary extends RowDataPacket {
+	username: string;
+	email: string;
 }
 
 /**
@@ -97,6 +109,84 @@ export async function listGameAccounts(userId: string): Promise<LinkedGameAccoun
 		.from(gameAccount)
 		.where(eq(gameAccount.userId, userId))
 		.orderBy(gameAccount.username);
+}
+
+/**
+ * An account on the realm that belongs to this player, and whether this profile
+ * records the link.
+ */
+export interface PlayerGameAccount {
+	username: string;
+	/** The address on the game account itself; empty when it has none. */
+	email: string;
+	/** Whether a `game_account` row links it to this profile. */
+	linked: boolean;
+	/** That row's id when linked — what unlinking needs. */
+	linkId: string | null;
+}
+
+/**
+ * The player's accounts on the realm.
+ *
+ * Two sources, because neither one alone is the whole truth:
+ *
+ * 1. **The address on the account.** This is the primary source: accounts created
+ *    here carry the Discord address, and a legacy account is claimed by matching
+ *    it. It is also why unlinking does not remove a row from this list — the
+ *    account is still the player's, the mapping only records the claim.
+ * 2. **Anything already linked**, including accounts linked through the password
+ *    fallback, whose address is somebody else's or empty. Without this they would
+ *    disappear from the page at the moment they were linked.
+ *
+ * `account.email` carries no index in AzerothCore's schema, so this is a table
+ * scan. That is fine for the account counts of a private realm and would want an
+ * index before it ran on a very large one — but adding one means a DDL change on
+ * a database this project does not own.
+ */
+export async function listPlayerAccounts(
+	userId: string,
+	email: string
+): Promise<PlayerGameAccount[]> {
+	const linked = await listGameAccounts(userId);
+	const linkIdByUsername = new Map(linked.map((account) => [account.username, account.id]));
+	const accounts = new Map<string, PlayerGameAccount>();
+
+	const [byEmail] = await getAcoreAuthDb().query<AccountSummary[]>(
+		'SELECT username, email FROM account WHERE email = ? ORDER BY username',
+		[email]
+	);
+
+	for (const row of byEmail) {
+		accounts.set(row.username, {
+			username: row.username,
+			email: row.email,
+			linked: linkIdByUsername.has(row.username),
+			linkId: linkIdByUsername.get(row.username) ?? null
+		});
+	}
+
+	// Linked accounts the address did not surface still need their real address
+	// shown, so the page does not claim they have none. Bounded by how many
+	// accounts one profile has linked.
+	const unlisted = [...linkIdByUsername.keys()].filter((username) => !accounts.has(username));
+
+	if (unlisted.length > 0) {
+		const [rows] = await getAcoreAuthDb().query<AccountSummary[]>(
+			`SELECT username, email FROM account WHERE username IN (${unlisted.map(() => '?').join(', ')})`,
+			unlisted
+		);
+
+		for (const row of rows) {
+			accounts.set(row.username, {
+				username: row.username,
+				email: row.email,
+				linked: true,
+				linkId: linkIdByUsername.get(row.username) ?? null
+			});
+		}
+	}
+
+	return [...accounts.values()].sort((a, b) => a.username.localeCompare(b.username));
 }
 
 /** Runs one console command and reduces a failure to something printable. */
@@ -288,7 +378,11 @@ export async function linkExistingGameAccount(
 		throw error;
 	}
 
-	await syncAccountEmail(row.id, email.value);
+	// Nothing to write when the address already agrees — which is exactly the
+	// case for an account that was just linked by the email match.
+	if (provenByPassword) {
+		await syncAccountEmail(row.id, email.value);
+	}
 
 	return { ok: true, message: `Account "${username.value}" is now linked to your profile.` };
 }

@@ -175,6 +175,13 @@ Creating and linking a game account lives in [`src/lib/server/accounts/`](src/li
   through the profile that owns it. It is best-effort: the link stands if the write fails, and it cannot be
   rolled back anyway, because the two databases cannot share a transaction. This is the only place the
   project mutates a row AzerothCore owns.
+- **The accounts page lists the realm's accounts by email**, then folds in anything already linked
+  ([`listPlayerAccounts()`](src/lib/server/accounts/service.ts)). AzerothCore is the source of truth here:
+  an account carrying the player's Discord address is theirs whether or not this site created it, which is
+  why **unlinking does not remove a row from that list** — it only clears the recorded claim, while the
+  account keeps its address. `account.email` has **no index** in AzerothCore's schema, so that lookup is a
+  table scan; fine at private-realm account counts, and adding an index would be a DDL change on a
+  database this project does not own.
 - **Rules** ([`rules.ts`](src/lib/server/accounts/rules.ts)) mirror the server's limits
   (`MAX_ACCOUNT_STR` 17, `MAX_PASS_STR` 16, `MAX_EMAIL_STR` 255) and add two of ours: alphanumeric
   usernames, and no
