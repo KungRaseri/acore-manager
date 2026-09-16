@@ -5,11 +5,19 @@ import { executeCommand } from '$lib/server/acore';
 import { getDb } from '$lib/server/db';
 import { getAcoreAuthDb } from '$lib/server/db/acore';
 import { gameAccount } from '$lib/server/db/schema';
-import { validateExistingPassword, validateNewPassword, validateUsername } from './rules';
+import {
+	emailsMatch,
+	validateEmail,
+	validateExistingPassword,
+	validateNewPassword,
+	validateUsername
+} from './rules';
 import { verifierMatches } from './srp6';
 
-/** The columns the SRP6 check needs from AzerothCore's `account` table. */
+/** The columns linking needs from AzerothCore's `account` table. */
 interface AccountCredentials extends RowDataPacket {
+	id: number;
+	email: string | null;
 	salt: Buffer;
 	verifier: Buffer;
 }
@@ -20,20 +28,37 @@ interface AccountCredentials extends RowDataPacket {
  * ## Creation goes through the worldserver
  *
  * Accounts are **not** written directly into `acore_auth`. The site runs
- * `account create <username> <password>` over the worldserver's console (SOAP),
- * so the server computes the salt and SRP6 verifier itself — the same code path
- * as `.account create` typed into the console, and the same path as the wiki's
- * documented procedure. Nothing here invents its own registration format, and a
- * change to AzerothCore's registration data cannot silently diverge from us.
+ * `account create <username> <password> <email>` over the worldserver's console
+ * (SOAP), so the server computes the salt and SRP6 verifier itself — the same
+ * code path as `.account create` typed into the console, and the same path as
+ * the wiki's documented procedure. Nothing here invents its own registration
+ * format, and a change to AzerothCore's registration data cannot silently
+ * diverge from us.
  *
- * ## Linking proves ownership with the account's own password
+ * Every argument in that command line is checked to be a single whitespace-free
+ * token first, because the server parses the command by splitting on spaces: an
+ * argument containing one would quietly turn into two arguments.
  *
- * Attaching an account that was created elsewhere (in game, or before this site
- * existed) needs the visitor to prove it is theirs. We do that by checking the
- * password they supply against the salt and verifier already on the
- * `acore_auth.account` row — the identical check the auth server makes at logon
- * (see `srp6.ts`). It is read-only: no password is set, reset, or changed, and
- * no console command is run with administrator rights on their behalf.
+ * ## Linking is the legacy path, and the email decides first
+ *
+ * Everything created from this site carries the address of the Discord identity
+ * that made it, so an account and a profile already agree on an email. Linking
+ * exists for the few accounts that predate the site.
+ *
+ * Two things can prove such an account belongs to the visitor:
+ *
+ * 1. **The account's stored email is the Discord address that signed in.** That
+ *    address comes from the identity provider, never from a form field, so a
+ *    match is evidence the account was set up against this Discord account.
+ * 2. **The account's own password**, checked against the salt and verifier on
+ *    the `acore_auth.account` row — the identical check the auth server makes at
+ *    logon (see `srp6.ts`). This is the fallback for accounts whose email is
+ *    empty or belongs to something else.
+ *
+ * Neither path changes the password. The one write into `acore_auth` happens
+ * *after* the link is recorded: the account's email is set to the Discord
+ * address, so from then on the two agree and the account is reachable through
+ * the profile that owns it.
  *
  * ## No transactions across databases
  *
@@ -109,6 +134,10 @@ async function runConsoleCommand(command: string): Promise<AccountResult> {
 /**
  * Creates a game account on the worldserver and records it against the user.
  *
+ * `rawEmail` is the address on the signed-in Discord identity, not a
+ * visitor-entered field: every account this site creates carries the address of
+ * the profile it belongs to, which is what makes the email check work later.
+ *
  * On failure after the account exists, the message says so — the visitor needs
  * to know they can log in with the credentials they just chose even though this
  * page does not show the account yet.
@@ -116,7 +145,8 @@ async function runConsoleCommand(command: string): Promise<AccountResult> {
 export async function createGameAccount(
 	userId: string,
 	rawUsername: string,
-	rawPassword: string
+	rawPassword: string,
+	rawEmail: string
 ): Promise<AccountResult> {
 	const username = validateUsername(rawUsername);
 	if (!username.ok) {
@@ -126,6 +156,11 @@ export async function createGameAccount(
 	const password = validateNewPassword(rawPassword);
 	if (!password.ok) {
 		return password;
+	}
+
+	const email = validateEmail(rawEmail);
+	if (!email.ok) {
+		return email;
 	}
 
 	const existing = await getDb()
@@ -141,7 +176,9 @@ export async function createGameAccount(
 		};
 	}
 
-	const created = await runConsoleCommand(`account create ${username.value} ${password.value}`);
+	const created = await runConsoleCommand(
+		`account create ${username.value} ${password.value} ${email.value}`
+	);
 
 	if (!created.ok) {
 		return created;
@@ -176,41 +213,64 @@ export async function createGameAccount(
 }
 
 /**
- * Attaches an existing game account after verifying the password against the
- * credentials stored on the `acore_auth` row.
+ * Attaches an existing game account to a profile.
+ *
+ * Ownership is established by the Discord email first and the account's own
+ * password second — see the module comment. `rawPassword` may therefore be
+ * empty: an account that already carries the visitor's Discord address does not
+ * need it.
  */
 export async function linkExistingGameAccount(
 	userId: string,
 	rawUsername: string,
-	rawPassword: string
+	rawPassword: string,
+	rawEmail: string
 ): Promise<AccountResult> {
 	const username = validateUsername(rawUsername);
 	if (!username.ok) {
 		return username;
 	}
 
-	const password = validateExistingPassword(rawPassword);
-	if (!password.ok) {
+	// The address comes from the identity provider and so is trustworthy, but it
+	// still has to be a sane single value before it goes into the account row.
+	const email = validateEmail(rawEmail);
+	if (!email.ok) {
+		return email;
+	}
+
+	// Empty means "I have no password for this account", not an empty password.
+	const password = rawPassword ? validateExistingPassword(rawPassword) : null;
+	if (password && !password.ok) {
 		return password;
 	}
 
 	// The collation on `account.username` is case-insensitive, so the lookup
-	// matches whatever case the visitor typed. This is a read: nothing about the
-	// account is modified by linking it.
+	// matches whatever case the visitor typed.
 	const [rows] = await getAcoreAuthDb().query<AccountCredentials[]>(
-		'SELECT salt, verifier FROM account WHERE username = ? LIMIT 1',
+		'SELECT id, email, salt, verifier FROM account WHERE username = ? LIMIT 1',
 		[username.value]
 	);
 
 	const row = rows[0];
 
-	if (!row || !verifierMatches(username.value, password.value, row.salt, row.verifier)) {
-		// One message for "no such account" and "wrong password" on purpose:
-		// distinguishing them would turn this form into a way to enumerate
-		// account names on the realm.
+	if (!row) {
+		return { ok: false, message: 'No account on this realm has that name.' };
+	}
+
+	const provenByEmail = emailsMatch(row.email ?? '', email.value);
+	const provenByPassword =
+		!provenByEmail &&
+		password !== null &&
+		verifierMatches(username.value, password.value, row.salt, row.verifier);
+
+	if (!provenByEmail && !provenByPassword) {
+		// Deliberately one message for both failures: telling them apart would
+		// turn this form into a way to probe which names exist and which of them
+		// carry somebody else's email address.
 		return {
 			ok: false,
-			message: 'No account on this realm matches that name and password.'
+			message:
+				'That account is not registered to your Discord address, and the password did not match it either.'
 		};
 	}
 
@@ -228,7 +288,30 @@ export async function linkExistingGameAccount(
 		throw error;
 	}
 
+	await syncAccountEmail(row.id, email.value);
+
 	return { ok: true, message: `Account "${username.value}" is now linked to your profile.` };
+}
+
+/**
+ * Points the account's recovery address at the Discord identity that owns it.
+ *
+ * The only write this project makes into a database AzerothCore owns: one
+ * column of one row, after ownership has been established.
+ *
+ * Best-effort on purpose. The link is already recorded and remains valid even
+ * if this fails, so the failure is logged rather than reported — and it cannot
+ * be rolled back anyway, because the two databases cannot share a transaction.
+ */
+async function syncAccountEmail(accountId: number, email: string): Promise<void> {
+	try {
+		await getAcoreAuthDb().execute('UPDATE account SET email = ? WHERE id = ? LIMIT 1', [
+			email,
+			accountId
+		]);
+	} catch (error) {
+		console.error(`Could not set the email on game account id ${accountId}.`, error);
+	}
 }
 
 /**

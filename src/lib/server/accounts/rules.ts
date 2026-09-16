@@ -20,6 +20,11 @@
  *
  * Passwords for *existing* accounts are deliberately not constrained the same
  * way — see `validateExistingPassword`.
+ *
+ * Every value that reaches a command line is validated to be a single
+ * whitespace-free token. That is not tidiness: `account create` is parsed by
+ * splitting on spaces, so an argument containing one would silently become two
+ * arguments.
  */
 
 /** `MAX_ACCOUNT_STR` — a longer username is rejected by the server. */
@@ -30,11 +35,20 @@ export const MIN_USERNAME_LENGTH = 3;
 export const MAX_PASSWORD_LENGTH = 16;
 /** Our choice: the server accepts shorter, but a game account is a credential. */
 export const MIN_PASSWORD_LENGTH = 8;
+/** `MAX_EMAIL_STR` — a longer email is rejected by the server. */
+export const MAX_EMAIL_LENGTH = 255;
 
 /** Alphanumeric only — no spaces, which is what the console command needs. */
 const USERNAME_PATTERN = /^[A-Za-z0-9]+$/;
 /** Printable ASCII without spaces: safe to put in a console command line. */
 const NEW_PASSWORD_PATTERN = /^[\x21-\x7e]+$/;
+
+/**
+ * A shape check, not an RFC 5322 parser. The address travels as one
+ * command-line argument, so "no whitespace" is the rule that actually matters;
+ * the rest is here to catch typos before the server stores them.
+ */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export type Validated<T> = { ok: true; value: T } | { ok: false; message: string };
 
@@ -92,6 +106,47 @@ export function validateNewPassword(value: string): Validated<string> {
 	}
 
 	return { ok: true, value };
+}
+
+/**
+ * Rules for the email handed to `account create`.
+ *
+ * This address is **not** visitor input: it is the address on the Discord
+ * identity that signed in, which is why the form has no field for it. The
+ * console command treats the argument as optional; this project always supplies
+ * one, so an account created here has the same recovery address as the profile
+ * it belongs to.
+ */
+export function validateEmail(value: string): Validated<string> {
+	const email = value.trim();
+
+	if (!email) {
+		return { ok: false, message: 'Enter an email address for the account.' };
+	}
+
+	if (email.length > MAX_EMAIL_LENGTH) {
+		return { ok: false, message: 'That email address is too long.' };
+	}
+
+	if (!EMAIL_PATTERN.test(email)) {
+		return { ok: false, message: 'That does not look like an email address.' };
+	}
+
+	return { ok: true, value: email };
+}
+
+/**
+ * Whether an account's stored email is the Discord address that signed in.
+ *
+ * Case-insensitive, because email addresses are. An empty stored address never
+ * matches: many accounts predate any email, and an unset field must not read as
+ * proof of ownership.
+ */
+export function emailsMatch(stored: string, signedIn: string): boolean {
+	const storedAddress = stored.trim().toLowerCase();
+	const signedInAddress = signedIn.trim().toLowerCase();
+
+	return storedAddress !== '' && storedAddress === signedInAddress;
 }
 
 /**

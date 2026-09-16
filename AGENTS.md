@@ -156,19 +156,28 @@ The integration layer is server-only, lives in [`src/lib/server/acore/`](src/lib
 Creating and linking a game account lives in [`src/lib/server/accounts/`](src/lib/server/accounts):
 
 - **Creation goes through the worldserver**, the way the official procedure describes it: the site runs
-  `account create <username> <password>` over the console (SOAP), so the server computes the SRP6 salt
-  and verifier itself. This project writes nothing into `acore_auth`; the only table it owns here is the
+  `account create <username> <password> <email>` over the console (SOAP), so the server computes the SRP6
+  salt and verifier itself. The email argument is **the signed-in Discord address, never a form field**
+  (the command treats it as optional; we always send one). The only table this project owns is the
   `game_account` mapping in [`schema.ts`](src/lib/server/db/schema.ts).
-- **Linking verifies the account's own password** against the salt and verifier already on the
-  `acore_auth.account` row — the same check the auth server performs at logon. It is read-only: no
-  password is set or reset, and no administrator command runs on the visitor's behalf. One message covers
-  "no such account" and "wrong password" on purpose, so the form cannot be used to enumerate accounts.
+- **Linking is the legacy path, and the email decides first.** An account that already carries the
+  visitor's Discord address is theirs by definition, so the account name alone links it. For an account
+  whose email is empty or belongs to someone else, the account's own password is checked against the
+  `salt` and `verifier` on the `acore_auth.account` row — the same check the auth server makes at logon,
+  and it never changes the password. One message covers both failures on purpose, so the form cannot be
+  used to probe which names exist.
 - **The SRP6 check is transcribed, not invented.** [`srp6.ts`](src/lib/server/accounts/srp6.ts) documents
   the two details that make it work — the game's own `N` and `g`, and `BigNumber`'s little-endian default
   for both the digest and the stored verifier. Getting either wrong can only deny a valid attempt, never
   grant an invalid one.
+- **One write into AzerothCore's database.** After a link is recorded, the account's email is set to the
+  Discord address — one column of one row — so the two agree from then on and the account is reachable
+  through the profile that owns it. It is best-effort: the link stands if the write fails, and it cannot be
+  rolled back anyway, because the two databases cannot share a transaction. This is the only place the
+  project mutates a row AzerothCore owns.
 - **Rules** ([`rules.ts`](src/lib/server/accounts/rules.ts)) mirror the server's limits
-  (`MAX_ACCOUNT_STR` 17, `MAX_PASS_STR` 16) and add two of ours: alphanumeric usernames, and no
+  (`MAX_ACCOUNT_STR` 17, `MAX_PASS_STR` 16, `MAX_EMAIL_STR` 255) and add two of ours: alphanumeric
+  usernames, and no
   whitespace in a _new_ password — both because the value is interpolated into a space-delimited console
   command. Passwords for _existing_ accounts are deliberately left unconstrained, because they are hashed
   and never sent to a console.

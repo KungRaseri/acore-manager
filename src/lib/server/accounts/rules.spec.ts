@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+	MAX_EMAIL_LENGTH,
 	MAX_PASSWORD_LENGTH,
 	MAX_USERNAME_LENGTH,
+	emailsMatch,
 	normalizeUsername,
+	validateEmail,
 	validateExistingPassword,
 	validateNewPassword,
 	validateUsername
@@ -69,5 +72,47 @@ describe('validateExistingPassword', () => {
 
 	it('bounds the input so a hostile value cannot buy hashing time', () => {
 		expect(validateExistingPassword('a'.repeat(65)).ok).toBe(false);
+	});
+});
+
+describe('validateEmail', () => {
+	it('accepts an address and trims the surrounding space', () => {
+		expect(validateEmail('  thrall@example.com ')).toEqual({
+			ok: true,
+			value: 'thrall@example.com'
+		});
+	});
+
+	it('rejects an empty address, because the account would have no recovery path', () => {
+		expect(validateEmail('').ok).toBe(false);
+	});
+
+	it('rejects an address containing whitespace, which would split the command line', () => {
+		expect(validateEmail('thrall @example.com').ok).toBe(false);
+	});
+
+	it('rejects a value that is not an address at all', () => {
+		expect(validateEmail('thrall').ok).toBe(false);
+	});
+
+	it('enforces the server length limit', () => {
+		expect(validateEmail(`${'a'.repeat(MAX_EMAIL_LENGTH)}@example.com`).ok).toBe(false);
+	});
+});
+
+describe('emailsMatch', () => {
+	it('matches the Discord address regardless of case or padding', () => {
+		expect(emailsMatch(' Thrall@Example.COM ', 'thrall@example.com')).toBe(true);
+	});
+
+	it('does not match a different address', () => {
+		expect(emailsMatch('jaina@example.com', 'thrall@example.com')).toBe(false);
+	});
+
+	it('never matches an empty stored address', () => {
+		// Accounts that predate any email are common, and an unset field must not
+		// read as proof of ownership.
+		expect(emailsMatch('', 'thrall@example.com')).toBe(false);
+		expect(emailsMatch('   ', 'thrall@example.com')).toBe(false);
 	});
 });

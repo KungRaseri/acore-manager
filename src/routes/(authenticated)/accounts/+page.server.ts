@@ -46,10 +46,13 @@ export const actions = {
 		const user = requireUser(locals.user ? toCurrentUser(locals.user) : null, url.pathname);
 		const data = await request.formData();
 
+		// The account email is the signed-in identity's address, not a form
+		// field: it is what ties the game account to the Discord profile.
 		const result = await createGameAccount(
 			user.id,
 			String(data.get('username') ?? ''),
-			String(data.get('password') ?? '')
+			String(data.get('password') ?? ''),
+			user.email
 		);
 
 		return toState('create', result);
@@ -59,10 +62,13 @@ export const actions = {
 		const user = requireUser(locals.user ? toCurrentUser(locals.user) : null, url.pathname);
 		const data = await request.formData();
 
+		// The password is optional here on purpose: it is only needed when the
+		// account's stored email is not the visitor's Discord address.
 		const result = await linkExistingGameAccount(
 			user.id,
 			String(data.get('username') ?? ''),
-			String(data.get('password') ?? '')
+			String(data.get('password') ?? ''),
+			user.email
 		);
 
 		return toState('link', result);

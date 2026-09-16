@@ -82,8 +82,9 @@
 			<div class="flex flex-col gap-1">
 				<h2 class="h5">Create a game account</h2>
 				<p class="text-sm opacity-80">
-					The server creates the account for you. Letters and numbers only for the name; the
-					password must be 8-16 characters with no spaces.
+					The server creates the account for you, tied to your Discord address — which is also what
+					recovers it later. Letters and numbers only for the name; the password must be 8-16
+					characters without spaces.
 				</p>
 			</div>
 
@@ -115,6 +116,22 @@
 					/>
 				</label>
 
+				<!-- The third argument of `account create`, after the password. Shown so the
+				     visitor can see which address the account will carry, but not editable: it
+				     is the signed-in Discord address, which the action reads from the session
+				     rather than from this form. -->
+				<label class="label">
+					<span class="label-text">Email address</span>
+					<input
+						class="input"
+						name="email"
+						type="email"
+						readonly
+						aria-readonly="true"
+						value={data.user.email}
+					/>
+				</label>
+
 				<button type="submit" class="mt-2 btn justify-center preset-filled-primary-500">
 					Create account
 				</button>
@@ -127,8 +144,9 @@
 			<div class="flex flex-col gap-1">
 				<h2 class="h5">Link an existing account</h2>
 				<p class="text-sm opacity-80">
-					Already play on this realm? Enter that account's own name and password. Nothing is changed
-					on the account — the password is only checked against the server's stored credentials.
+					For an account that was not created here. If it already carries your Discord address, the
+					name is enough; otherwise the account's own password proves it is yours. Either way, the
+					account's email is then set to your Discord address.
 				</p>
 			</div>
 
@@ -146,8 +164,10 @@
 				</label>
 
 				<label class="label">
-					<span class="label-text">Password</span>
-					<input class="input" name="password" type="password" required autocomplete="off" />
+					<span class="label-text"
+						>Password (only if the account's email is not your Discord address)</span
+					>
+					<input class="input" name="password" type="password" autocomplete="off" />
 				</label>
 
 				<button type="submit" class="mt-2 btn justify-center preset-outlined-primary-500">
