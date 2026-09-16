@@ -40,6 +40,16 @@ description: Use when changing the Drizzle schema, generating or applying migrat
 - **Drizzle does not create the database.** [`migrate.mjs`](../../../migrate.mjs) does: it runs
   `CREATE DATABASE IF NOT EXISTS` (utf8mb4) and only then `drizzle-orm/mysql2/migrator`. The container
   entrypoint runs it on every start, and both steps are idempotent.
+- **AzerothCore's databases are not ours.** `acore_auth`, `acore_world`, `acore_characters` (and
+  `acore_playerbots`) are owned and migrated by AzerothCore, whose SQL updater applies
+  `data/sql/updates/`. Reach them through the plain `mysql2` pools in
+  [`src/lib/server/db/acore.ts`](../../../src/lib/server/db/acore.ts) — `getAcoreAuthDb()`,
+  `getAcoreWorldDb()`, `getAcoreCharactersDb()`, or `getAcoreDb(name)` for any name in
+  `ACORE_DATABASES`. They are configured by a single `ACORE_DATABASE_URL` (server and credentials
+  only; the database name is chosen per client).
+- **Never point `drizzle-kit` at an AzerothCore database**, and never declare its tables in a Drizzle
+  schema. You would only ever declare a subset of a schema this large, and `db:push` would then try to
+  drop everything it was not told about.
 - The database client must be constructed lazily so `vite build` never needs a live database.
 
 ## Steps

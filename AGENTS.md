@@ -91,13 +91,14 @@ it watches rather than exiting.
 
 A single `.env` at the repository root, loaded by SvelteKit. [`.env.example`](.env.example) is the template; `.gitignore` ignores `.env` and `.env.*` while keeping `!.env.example`.
 
-| Variable                | Purpose                                                                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`          | MySQL connection string, `mysql://user:password@host:port/database`                                               |
-| `ORIGIN`                | Site origin (`http://localhost:5173` in dev, `http://localhost:4173` for preview)                                 |
-| `BETTER_AUTH_SECRET`    | Better Auth signing secret — 32+ characters of high entropy, unique per environment                               |
-| `DISCORD_CLIENT_ID`     | Discord OAuth application id ([discord.com/developers/applications](https://discord.com/developers/applications)) |
-| `DISCORD_CLIENT_SECRET` | Discord OAuth application secret                                                                                  |
+| Variable                | Purpose                                                                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`          | MySQL connection string, `mysql://user:password@host:port/database`                                                                                                 |
+| `ORIGIN`                | Site origin (`http://localhost:5173` in dev, `http://localhost:4173` for preview)                                                                                   |
+| `BETTER_AUTH_SECRET`    | Better Auth signing secret — 32+ characters of high entropy, unique per environment                                                                                 |
+| `DISCORD_CLIENT_ID`     | Discord OAuth application id ([discord.com/developers/applications](https://discord.com/developers/applications))                                                   |
+| `DISCORD_CLIENT_SECRET` | Discord OAuth application secret                                                                                                                                    |
+| `ACORE_DATABASE_URL`    | AzerothCore's MySQL server and credentials — deliberately **no database in the URL**, since the database name is chosen per client (`acore_auth`, `acore_world`, …) |
 
 Setup:
 
@@ -115,6 +116,9 @@ copy .env.example .env     # Windows (cp .env.example .env elsewhere)
 - **Workflow:** edit `schema.ts` → `npm run db:generate` → `npm run db:migrate`. While iterating locally, `db:push` syncs the schema directly.
 - **Drizzle does not create the database.** Creating it is a separate, one-time bootstrap, handled by [`migrate.mjs`](migrate.mjs) — see [Deployment](#deployment). `drizzle-kit migrate` alone will fail against a database that does not exist yet.
 - **Keep DB and auth construction lazy.** `getDb()` and `getAuth()` construct on first use. Nothing may build a client or adapter at module scope, or `vite build` (including SvelteKit's post-build analysis) will need a live database.
+- **AzerothCore's databases are not ours.** `acore_auth`, `acore_world`, `acore_characters` and `acore_playerbots` are owned and migrated by AzerothCore's own SQL updater. Reach them through the plain `mysql2` pools in [`src/lib/server/db/acore.ts`](src/lib/server/db/acore.ts) — `getAcoreAuthDb()`, `getAcoreWorldDb()`, `getAcoreCharactersDb()`, or `getAcoreDb(name)` for any entry in `ACORE_DATABASES`. They share a single `ACORE_DATABASE_URL` (server and credentials only) and differ by database name.
+- **Never point `drizzle-kit` at an AzerothCore database, and never declare its tables in a Drizzle schema.** Only a subset would ever be declared, so `db:push` would then try to drop everything it was not told about. Migrations exist for `acore_manager` alone.
+- **There are no cross-database transactions.** MySQL cannot commit atomically across `acore_manager` and an AC database, so any operation touching both must be made idempotent and retryable instead of transactional.
 
 ## Auth architecture
 

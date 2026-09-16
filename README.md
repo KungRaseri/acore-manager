@@ -61,6 +61,7 @@ commit it. Generate your own `BETTER_AUTH_SECRET` rather than using a placeholde
 | `BETTER_AUTH_SECRET`    | Better Auth signing secret — use 32+ characters of high entropy, and a different value per environment                          |
 | `DISCORD_CLIENT_ID`     | Discord OAuth application id — create one at [discord.com/developers/applications](https://discord.com/developers/applications) |
 | `DISCORD_CLIENT_SECRET` | Discord OAuth application secret                                                                                                |
+| `ACORE_DATABASE_URL`    | AzerothCore's MySQL server and credentials — **no database in the URL**, since the database name is chosen per client           |
 
 ## Scripts
 
@@ -117,6 +118,11 @@ gated. Note that `test:unit` runs Vitest in watch mode, so CI and one-shot runs 
   live database. This is what lets the container image build without any secrets.
 - **Drizzle does not create the database.** Creating it is a separate one-time bootstrap handled by
   `migrate.mjs`; `drizzle-kit migrate` alone fails against a database that does not exist yet.
+- **AzerothCore's databases are read through plain clients, not Drizzle.** `acore_auth`,
+  `acore_world` and `acore_characters` are owned and migrated by AzerothCore, so
+  `src/lib/server/db/acore.ts` exposes `mysql2` pools (`getAcoreAuthDb()`, `getAcoreWorldDb()`,
+  `getAcoreCharactersDb()`) with no schema and no migrations. Add the database name to
+  `ACORE_DATABASES` when you need another, and set `ACORE_DATABASE_URL` in `.env`.
 
 ## UI foundation
 

@@ -14,15 +14,28 @@ function createDb() {
 let database: ReturnType<typeof createDb> | undefined;
 
 /**
- * The Drizzle client, constructed on first use.
+ * The Drizzle client for **this project's own database** (`acore_manager`),
+ * constructed on first use.
  *
  * This must stay lazy. Building the pool at module scope creates a connection
  * whenever the module is imported, and SvelteKit's post-build analysis step
  * imports the built server bundle — so an eager client either throws on a
  * missing DATABASE_URL or opens a connection during `npm run build`.
+ *
+ * For AzerothCore's databases use `./acore` instead — those are not managed by
+ * Drizzle and must not be.
  */
 export function getDb(): ReturnType<typeof createDb> {
 	database ??= createDb();
 
 	return database;
 }
+
+export {
+	ACORE_DATABASES,
+	getAcoreAuthDb,
+	getAcoreCharactersDb,
+	getAcoreDb,
+	getAcoreWorldDb,
+	type AcoreDatabase
+} from './acore';
