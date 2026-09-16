@@ -1,6 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
-import { playwright } from '@vitest/browser-playwright';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
 
@@ -21,11 +21,14 @@ export default defineConfig({
 
 			typescript: {
 				config: (config) => {
-					// Single app: the Drizzle config sits next to this file, not a level up.
-					config.include.push('./drizzle.config.ts');
+					// Single app: these live next to this file, not a level up.
+					config.include.push('./drizzle.config.ts', './vitest-setup-client.ts');
 				}
 			}
-		})
+		}),
+		// Test-only helper: sets the browser resolve conditions and unmounts
+		// components between tests. Replaced the old Vitest browser mode.
+		svelteTesting({ autoCleanup: true })
 	],
 	test: {
 		expect: { requireAssertions: true },
@@ -34,13 +37,11 @@ export default defineConfig({
 				extends: './vite.config.ts',
 				test: {
 					name: 'client',
-					browser: {
-						enabled: true,
-						provider: playwright(),
-						instances: [{ browser: 'chromium', headless: true }]
-					},
+					// jsdom, not a real browser: no Playwright browsers needed for unit tests.
+					environment: 'jsdom',
 					include: ['src/**/*.svelte.{test,spec}.{js,ts}'],
-					exclude: ['src/lib/server/**']
+					exclude: ['src/lib/server/**'],
+					setupFiles: ['./vitest-setup-client.ts']
 				}
 			},
 
