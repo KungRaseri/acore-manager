@@ -8,14 +8,14 @@ acore-manager is a **server and player management website for AzerothCore** (Wor
 
 - Application code lives in [`src/`](src) (routes under [`src/routes/`](src/routes), server-only code under [`src/lib/server/`](src/lib/server)).
 - Reusable **agent skills** live in [`.roo/skills/`](.roo/skills) and their third-party `llms.txt` reference corpus in [`llms/`](llms) — see [Skills & reference material](#skills--reference-material).
-- **Status: early scaffolding, with the auth and database plumbing already in place.** The app builds and deploys (see [Deployment](#deployment)); Discord sign-in and the database bootstrap work. The remaining demo routes and test examples are placeholders — see [Scaffold placeholders to replace](#scaffold-placeholders-to-replace).
-- **The AzerothCore integration layer does not exist yet and is deliberately deferred.** Nothing in this document describes it beyond the roadmap entry, so do not assume any integration surface is available. Read [Roadmap](#roadmap) before starting integration work.
+- **Status: auth, database and UI plumbing are in place.** The app builds and deploys (see [Deployment](#deployment)); Discord sign-in, the database bootstrap, the Skeleton theme and the `(public)` / `(authenticated)` / `(admin)` route groups all work. Authorization is a documented placeholder, and the AzerothCore integration reaches as far as the SOAP console client — see [Known issues](#known-issues).
+- **The AzerothCore integration layer has started, and only the SOAP client exists.** [`src/lib/server/acore/`](src/lib/server/acore) holds a server-only SOAP console client (`executeCommand`, `getServerInfo`) and its protocol helpers — no account provisioning, no character or ban queries. Read [AzerothCore integration](#azerothcore-integration) for the rules that already apply, then [Roadmap](#roadmap), before extending it.
 
 ## Repository layout
 
 | Path                                                                   | Role                                                                                       |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| [`src/routes/`](src/routes)                                            | SvelteKit routes — pages, `+page.server.ts` loads and actions                              |
+| [`src/routes/`](src/routes)                                            | SvelteKit routes, grouped into `(public)`, `(authenticated)` and `(admin)`                 |
 | [`src/routes/layout.css`](src/routes/layout.css)                       | Tailwind 4 entry point; also the stylesheet Prettier uses for Tailwind class sorting       |
 | [`src/hooks.server.ts`](src/hooks.server.ts)                           | SvelteKit server hooks                                                                     |
 | [`src/app.html`](src/app.html)                                         | HTML shell; where a Skeleton `data-theme` attribute belongs                                |
@@ -27,6 +27,12 @@ acore-manager is a **server and player management website for AzerothCore** (Wor
 | [`src/lib/server/db/auth.schema.ts`](src/lib/server/db/auth.schema.ts) | **Generated** Better Auth tables — never hand-edit                                         |
 | [`src/lib/assets/`](src/lib/assets)                                    | Assets imported by components                                                              |
 | [`static/`](static)                                                    | Served as-is from the site root                                                            |
+| [`src/themes/azeroth.css`](src/themes/azeroth.css)                     | The project's Skeleton theme — design tokens for `data-theme="azeroth"`                    |
+| [`src/lib/components/site/`](src/lib/components/site)                  | Site chrome: app shell, navigation, user menu, mode toggle                                 |
+| [`src/lib/navigation.ts`](src/lib/navigation.ts)                       | Navigation data and the active-item rule                                                   |
+| [`src/lib/user.ts`](src/lib/user.ts)                                   | `CurrentUser` — the user shape the UI is allowed to see                                    |
+| [`src/lib/auth-client.ts`](src/lib/auth-client.ts)                     | Browser-side Better Auth client (sign-out; later account linking)                          |
+| [`src/lib/server/authz.ts`](src/lib/server/authz.ts)                   | Authorization — the one place that answers "may this user do this?"                        |
 | [`.roo/skills/`](.roo/skills)                                          | Reusable agent skills; catalog in [`.roo/skills/README.md`](.roo/skills/README.md)         |
 | [`llms/`](llms)                                                        | Third-party `llms.txt` reference corpora; provenance in [`llms/README.md`](llms/README.md) |
 | [`.github/workflows/`](.github/workflows)                              | CI                                                                                         |
@@ -51,7 +57,7 @@ The repo ships reusable, tool-agnostic **agent skills** that turn this document 
 - **TypeScript**, strict, **ESM** everywhere (`"type": "module"`).
 - **SvelteKit 2** + **Svelte 5** (runes mode is forced for non-`node_modules` files in [`vite.config.ts`](vite.config.ts)); **`@sveltejs/adapter-node`** — the app runs as a Node server, not on a managed platform.
 - **Tailwind CSS 4** — CSS-first, **no `tailwind.config.js`**; the entry is [`src/routes/layout.css`](src/routes/layout.css).
-- **UI foundation (installed, not yet wired):** **Skeleton v5** (`@skeletonlabs/skeleton` for the CSS core + themes, `@skeletonlabs/skeleton-svelte` for Svelte components), **Bits UI** (`bits-ui`) headless primitives, **Lucide** (`@lucide/svelte`) for general icons, **Simple Icons** (`simple-icons`) for brand marks.
+- **UI foundation (wired):** **Skeleton v5** (`@skeletonlabs/skeleton` for the CSS core + themes, `@skeletonlabs/skeleton-svelte` for Svelte components, which are styled by `@skeletonlabs/skeleton-common` — re-exported through that package's `style` condition), **Bits UI** (`bits-ui`) headless primitives, **Lucide** (`@lucide/svelte`) for general icons, **Simple Icons** (`simple-icons`) for brand marks.
 - **Drizzle ORM + drizzle-kit** on **MySQL** (`mysql2` driver; dialect `mysql`).
 - **Better Auth** for authentication, with **Discord** as the only sign-in provider (email/password is not enabled).
 - **Vite 7** for dev/build; **Vitest 3** for unit tests — two projects: a `client` project on **jsdom** (`@testing-library/svelte` + `@testing-library/jest-dom`) and a `server` node project; **Playwright** for e2e only. No unit test runs in a real browser.
@@ -121,49 +127,81 @@ copy .env.example .env     # Windows (cp .env.example .env elsewhere)
 - **Never point `drizzle-kit` at an AzerothCore database, and never declare its tables in a Drizzle schema.** Only a subset would ever be declared, so `db:push` would then try to drop everything it was not told about. Migrations exist for `acore_manager` alone.
 - **There are no cross-database transactions.** MySQL cannot commit atomically across `acore_manager` and an AC database, so any operation touching both must be made idempotent and retryable instead of transactional.
 
+## Route groups & authorization
+
+Routes are grouped, and the group layout carries the rule:
+
+| Group                        | URLs                      | Layout does                                                          |
+| ---------------------------- | ------------------------- | -------------------------------------------------------------------- |
+| `src/routes/(public)`        | `/`, `/login`             | Public chrome (header + footer); serves anonymous visitors           |
+| `src/routes/(authenticated)` | `/dashboard`, `/accounts` | `requireUser()` — redirects to `/login?redirectTo=…` when signed out |
+| `src/routes/(admin)`         | `/admin`                  | `requireUser()` then `requireServerManager()` — 403 when not allowed |
+
+- Parentheses mean the folder **does not appear in the URL**: `(public)/login` serves `/login`.
+- Two groups cannot both own `/`, which is why the admin area lives under `/admin`.
+- **Authorization lives in [`src/lib/server/authz.ts`](src/lib/server/authz.ts) and nowhere else.** Layouts call `requireUser` / `requireServerManager`; pages do not re-check. `isServerManager` currently admits every signed-in user — the explicit project decision — and that file documents the GM-level query that will replace it.
+- `safeRedirectTarget()` guards the `redirectTo` parameter: only same-site paths survive, because the value reaches an OAuth `callbackURL`.
+- Client components cannot import `$lib/server`, so a layout that needs an authorization fact computes it in `+layout.server.ts` and passes it down as data (see `showAdminNav` in the `(authenticated)` layout).
+
+## AzerothCore integration
+
+The integration layer is server-only, lives in [`src/lib/server/acore/`](src/lib/server/acore), and is reached through two entry points:
+
+- **Databases** — [`src/lib/server/db/acore.ts`](src/lib/server/db/acore.ts) hands out plain `mysql2` pools (`getAcoreAuthDb()`, `getAcoreWorldDb()`, `getAcoreCharactersDb()`, `getAcoreDb()`). One `ACORE_DATABASE_URL` (server and credentials only) is shared; the database name is the only difference. Never declare these tables in Drizzle and never point `drizzle-kit` at them.
+- **Console** — [`src/lib/server/acore/soap.ts`](src/lib/server/acore/soap.ts) runs worldserver console commands over SOAP. It is an administrator credential with arbitrary command execution behind it, so: calls are serialised one at a time (the worldserver serves SOAP on a single thread), every call has a timeout (there is no server-side one), and nothing may import it from client-side code. `SOAP.Enabled = 1` and `SEC_ADMINISTRATOR` are prerequisites; both are documented in [`.env.example`](.env.example).
+
 ## Auth architecture
 
 - The Better Auth instance is [`src/lib/server/auth.ts`](src/lib/server/auth.ts); it is wired into requests through [`src/hooks.server.ts`](src/hooks.server.ts), and ambient types live in [`src/app.d.ts`](src/app.d.ts).
 - The auth tables are the generated ones in `auth.schema.ts`, re-exported alongside the project schema.
-- **Sign-in is Discord only.** [`src/routes/login/`](src/routes/login) posts to a form action that asks Better Auth for the Discord authorization URL and redirects the browser to it. The scaffold's email/password demo has been deleted.
+- **Sign-in is Discord only.** [`src/routes/(public)/login/`](<src/routes/(public)/login>) posts to a form action that asks Better Auth for the Discord authorization URL and redirects the browser to it. The scaffold's email/password demo has been deleted.
 - The Discord application must list this redirect URI: `<ORIGIN>/api/auth/callback/discord`.
-- **Authorization is not designed yet.** There is no role model in this project. Do not assume admin/moderator concepts exist; introduce them deliberately when the management domain is defined.
+- **Authorization is a placeholder, and it has one home.** [`src/lib/server/authz.ts`](src/lib/server/authz.ts) decides access: `requireUser()` for the `(authenticated)` group, `requireServerManager()` for `(admin)`. The latter admits any signed-in user today — deliberate, and documented in that file — until the GM level on a linked game account can be read from `acore_auth`. Do not add per-route checks elsewhere and do not assume a role model exists. (Note: this is not the Better Auth `admin` plugin; roles are not stored on `user`.)
 
 ## UI & design system
 
-Skeleton v5, Bits UI, Lucide and Simple Icons are installed but **the global stylesheet is not wired up yet**. Verified facts about the installed versions:
+Skeleton v5, Bits UI, Lucide and Simple Icons are installed, and the stylesheet is wired through [`src/routes/layout.css`](src/routes/layout.css). Verified facts about the installed versions:
 
-- Skeleton v5 exposes the CSS core at `@skeletonlabs/skeleton` (its `.` export resolves to the package's `index.css`) and each theme at `@skeletonlabs/skeleton/themes/<name>`. **24 built-in themes ship**, including `pine`.
-- **`@skeletonlabs/skeleton-svelte` is a Svelte component library, not a stylesheet** — import its components from JavaScript/TypeScript, never from CSS.
-- A theme is activated with a `data-theme="<name>"` attribute on the `<html>` element in [`src/app.html`](src/app.html).
-- Lucide exposes `@lucide/svelte` plus `./icons` and `./icons/*`, so icons are imported individually (e.g. `@lucide/svelte/icons/<kebab-case-name>`) rather than as a barrel.
-- **No theme has been chosen for this project.** `pine` is a placeholder inherited from the project this scaffold was copied from; replace it rather than building on it.
+- **The CSS entry chain is three imports:** `@skeletonlabs/skeleton` (tokens, Tailwind utilities, presets), `@skeletonlabs/skeleton-svelte` (the _component_ stylesheets, re-exported from `@skeletonlabs/skeleton-common`), then the project theme. Order matters: the theme overrides the core's `:root` defaults at equal specificity, so it must come last.
+- **The component stylesheet import is required.** Without `@import '@skeletonlabs/skeleton-svelte'` in the global stylesheet, Skeleton's components render structurally but unstyled. (Older notes in `llms/` claim that package is never imported from CSS; that is wrong for v5, where its `style` export points at `dist/index.css`.)
+- **The project theme is `azeroth`** — [`src/themes/azeroth.css`](src/themes/azeroth.css), a custom World of Warcraft–style palette (gold primary, arcane secondary, fel tertiary, warm stone surfaces), activated by `data-theme="azeroth"` on `<html>` in [`src/app.html`](src/app.html). Built-in themes under `@skeletonlabs/skeleton/themes/*` remain available but are unused.
+- **Light/dark mode is class-based, not media-based.** [`layout.css`](src/routes/layout.css) redefines Tailwind's `dark` variant as `&:where(.dark, .dark *)`, so `.dark` on `<html>` drives both `dark:` utilities and Skeleton's `color-scheme` — and therefore every `light-dark()` color pairing. The class is applied before first paint by an inline script in `app.html` and toggled by [`ModeToggle.svelte`](src/lib/components/site/ModeToggle.svelte), which is deliberately stateless (no `$state`, no hydration mismatch).
+- **Skeleton's Svelte components are Zag.js wrappers.** Their parts are styled by `data-scope`/`data-part` CSS from `@skeletonlabs/skeleton-common`, and their APIs are React-flavoured in the docs: the Svelte props are `class` (not `className`), and some callbacks live on the root — e.g. `Menu` reports selection through `MenuProps.onSelect`, while `Menu.Item` only takes `value`/`disabled`/`closeOnSelect`.
+- **Bits UI is for primitives Skeleton has no counterpart for** — currently the mobile nav drawer (`Dialog`) and the `Separator` in the user menu.
+- Lucide exposes `@lucide/svelte` plus `./icons` and `./icons/*`, so icons are imported individually (e.g. `@lucide/svelte/icons/<kebab-case-name>`) rather than as a barrel. Simple Icons is for brand marks only (the Discord mark on the sign-in page).
 
 Rules for UI work:
 
 - Use Skeleton tokens and `preset-*` classes for color and styling. **No hardcoded colors.**
 - No `<style>` blocks and no inline `style=` attributes unless there is no alternative.
+- **Do not write a `{/* … */}` comment across multiple lines in markup** — Svelte's parser rejects the multi-line form and the failure surfaces as dozens of unrelated errors. Use `<!-- … -->`.
+- **Every internal `href` and `goto()` goes through `resolve()`** from `$app/paths`; ESLint's `svelte/no-navigation-without-resolve` enforces it. Navigation data in [`src/lib/navigation.ts`](src/lib/navigation.ts) is resolved once, when defined.
 - Lucide for general icons, Simple Icons for brand marks only. **No emoji as UI icons.**
 - Prefer a styled Skeleton component for chrome and layout; reach for Bits UI only where Skeleton has no fit.
 - Read the specific component section of [`llms/skeletondev/llms-full.txt`](llms/skeletondev/llms-full.txt) or [`llms/bitsui/llms-full.txt`](llms/bitsui/llms-full.txt) before writing markup.
 
 ## Scaffold placeholders to replace
 
-These came from `sv create` and are not product features. Delete them as the real features land:
+These came from `sv create` and are not product features:
 
-- [`src/routes/demo/`](src/routes/demo) — the remaining `/demo` index and Playwright demo (the Better Auth demo is already gone).
-- [`src/lib/vitest-examples/`](src/lib/vitest-examples) — `greet.ts`, its specs, and the `Welcome` component.
-- The placeholder theme and unwired UI stack described above.
+- The `/demo` routes are **gone**; the Playwright smoke test that pointed at them now covers the public landing page ([`src/routes/(public)/page.e2e.ts`](<src/routes/(public)/page.e2e.ts>)).
+- [`src/lib/vitest-examples/`](src/lib/vitest-examples) — `greet.ts`, its specs and the `Welcome` component. **Delete them only once real tests exist**, because they are currently the only specs in the repository and both `npm run test:unit -- --run` and `playwright test` fail when no test files match.
+- The placeholder `pine` theme and the unwired UI stack are **gone**; the `azeroth` theme replaced them.
 
 ## Known issues
 
-- **No migrations exist yet.** [`drizzle/`](drizzle) holds only an empty journal, so `migrate.mjs`
-  creates the database and then warns that there are no tables. Run `npm run db:generate` and commit the
-  result before expecting a working schema.
-- **The UI stack is installed but not wired**, and no theme has been chosen — see
-  [UI & design system](#ui--design-system).
-- **No role or permission model exists.** Authorization is undesigned; do not assume admin or moderator
-  concepts are available.
+- **Authorization is open.** `isServerManager()` admits every signed-in user, so `/admin` is reachable by
+  anyone who can sign in. Deliberate, until the GM level on a linked game account can be read — see
+  [Route groups & authorization](#route-groups--authorization).
+- **Nothing links a website user to a game account.** No table maps a Better Auth user to an
+  `acore_auth.account`, which is what blocks both the authorization rule and game account provisioning.
+- **The UI is dark by default.** `app.html` adds `.dark` unless the visitor opted into light mode;
+  nothing follows `prefers-color-scheme`.
+- **Features do not use the database yet.** `drizzle/0000_*.sql` creates the Better Auth tables only.
+- **The console UI is deliberately read-only.** `/admin` can run `.server info`; there is no command box
+  until access is decided by GM level.
+- **e2e tests need a live database and downloaded browsers**, so `npm run test:e2e` is not part of routine
+  verification — but `playwright test` does expect at least one matching spec.
 
 ## Deployment
 
@@ -207,14 +245,17 @@ node build/index.js   # serve (PORT, default 3000)
 
 ## Roadmap
 
-1. **Finish cleaning the scaffold** — remove the remaining `/demo` routes and `src/lib/vitest-examples/`,
-   wire the Tailwind + Skeleton stylesheet, and choose a theme.
-2. **Define the management domain** — accounts, GM levels, characters, bans, live operations — and the
-   auth model that goes with it.
-3. **AzerothCore integration** — **deferred.** When it starts, document the integration surfaces and
-   their security rules _before_ writing code. At minimum that means: the shared `acore_auth`,
-   `acore_world` and `acore_characters` MySQL databases; offline SRP6 account provisioning (salt and
-   verifier can be computed without running the auth server); the world server's SOAP console on port
-   7878 (off by default) and the telnet remote console on 3443, both of which grant console-command
-   execution and must never be exposed to the browser; and the fact that the auth and world servers do
-   not communicate with each other at all — they are coupled only through `acore_auth`.
+1. **UI, theming and route groups.** _Done_ — the `azeroth` theme, the site chrome, the
+   `(public)` / `(authenticated)` / `(admin)` groups and the centralized `authz` helper.
+2. **Game accounts — create and link.** The next piece of work. It needs a `game_account` mapping table
+   in `acore_manager` (unique on the game username) plus an explicit ownership policy, and offline SRP6
+   provisioning, since salt and verifier can be computed without running the auth server.
+3. **Close the authorization gate.** Read `gmlevel` from `acore_auth.account_access` for the linked game
+   account, require `SEC_ADMINISTRATOR`, and replace `isServerManager()`.
+4. **Characters, bans and live operations** — the rest of the management domain, on top of
+   `acore_characters` and the SOAP console.
+5. **AzerothCore integration rules.** What already applies is in
+   [AzerothCore integration](#azerothcore-integration). Before adding features on top: the auth and world
+   servers do not communicate with each other at all — they are coupled only through `acore_auth` — and
+   the telnet remote console on port 3443 grants the same command execution as SOAP and must never be
+   exposed to the browser.

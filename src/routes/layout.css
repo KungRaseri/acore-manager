@@ -1,3 +1,38 @@
+/*
+	Global stylesheet — the Tailwind v4 entry point.
+
+	Import order matters:
+	1. Tailwind itself (preflight + the theme/utility engine).
+	2. The Skeleton CSS core — design tokens, presets, form and layout utilities.
+	3. The project theme, which overrides Skeleton's token defaults. Themes are
+	   scoped to [data-theme='...'], which has the same specificity as the
+	   generated :root block, so the theme must be imported *after* the core.
+*/
 @import 'tailwindcss';
+@import '@skeletonlabs/skeleton';
+
+/*
+	The Svelte components' own styles — Skeleton v5 keeps them in a separate
+	package (@skeletonlabs/skeleton-common) that this package's `style` export
+	re-points to. Without this import the components render structurally but
+	unstyled. It resolves through the same "style" condition as the core import
+	above, and must come *before* the theme so theme tokens still win.
+*/
+@import '@skeletonlabs/skeleton-svelte';
+
+@import '../themes/azeroth.css';
+
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+/*
+	Dark mode is class-based, not media-based: Tailwind's default `dark` variant
+	tracks the OS, which would make the in-app mode toggle a no-op. Overriding
+	the variant means Skeleton's own `@variant dark` blocks (which is what drives
+	`color-scheme` and, through it, every `light-dark()` color pairing) follow the
+	`.dark` class on <html> as well.
+
+	See src/app.html for where the class is applied, and
+	src/lib/components/site/ModeToggle.svelte for where it is changed.
+*/
+@custom-variant dark (&:where(.dark, .dark *));

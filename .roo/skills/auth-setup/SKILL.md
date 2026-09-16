@@ -30,7 +30,9 @@ description: Use when working with authentication — Better Auth configuration,
 - [`src/hooks.server.ts`](../../../src/hooks.server.ts) — where auth is wired into requests.
 - [`src/app.d.ts`](../../../src/app.d.ts) — ambient types, including `App.Locals`.
 - [`src/lib/server/db/auth.schema.ts`](../../../src/lib/server/db/auth.schema.ts) — the **generated** `user`/`session`/`account`/`verification` tables.
-- [`src/routes/login/`](../../../src/routes/login) — the sign-in route: a form action that asks Better Auth for the Discord authorization URL and redirects to it.
+- [`src/routes/(public)/login/`](<../../../src/routes/(public)/login>) — the sign-in route: a form action that asks Better Auth for the Discord authorization URL and redirects to it, after sanitising `redirectTo` through `safeRedirectTarget()`.
+- [`src/lib/server/authz.ts`](../../../src/lib/server/authz.ts) — the authorization helpers the route groups call.
+- [`src/lib/auth-client.ts`](../../../src/lib/auth-client.ts) — the browser client (sign-out today, provider linking later).
 
 ## Key facts
 
@@ -38,7 +40,8 @@ description: Use when working with authentication — Better Auth configuration,
 - **Core schema** is `user`, `session`, `account`, `verification` — the tables in `auth.schema.ts`. It is **generated**: regenerate with `npm run auth:schema` and never hand-edit it.
 - **Drizzle adapter** points at this project's MySQL Drizzle client. The adapter's `provider` must match the database dialect (`mysql`), not `pg`/`postgresql`.
 - **SvelteKit integration:** the `sveltekitCookies` plugin must remain the **last** entry in the plugins array, and the handler is wired through `src/hooks.server.ts`.
-- **Server-side session access:** read the session from `event.locals` in server code (types in `src/app.d.ts`); hooks populate it.
+- **Server-side session access:** read the session from `event.locals` in server code (types in `src/app.d.ts`); hooks populate it. The root `+layout.server.ts` narrows it to `CurrentUser` (`src/lib/user.ts`) for the UI — never hand a raw Better Auth record to a page.
+- **Sign-out is client-side:** `authClient.signOut()` from `src/lib/auth-client.ts`, then `invalidateAll()` before navigating, because the session is read by hooks on every request.
 - The `auth:schema` script runs the Better Auth CLI against `src/lib/server/auth.ts` and writes `src/lib/server/db/auth.schema.ts`.
 - **The CLI needs the module to expose `auth.options`.** `getAuth()` is the app's entry point, but the CLI reads `export const auth` (or a default export) and then uses `.options` off it. `src/lib/server/auth.ts` therefore exports `auth` as a plain object with an `options` getter that calls `getAuth()`. It cannot be a `Proxy`: the CLI loads the config through `c12`, which merges the loaded value with `defu`, and `defu` copies own enumerable properties only — a proxy over an empty target is flattened to `{}` and the CLI reports that it could not read the config.
 - `auth.schema.ts` is listed in `.prettierignore`: the CLI writes its own formatting (2-space indents, double quotes), so `npm run lint` would fail on every regeneration otherwise.
@@ -57,6 +60,9 @@ description: Use when working with authentication — Better Auth configuration,
 - `sveltekitCookies` stays last in the plugins array.
 - Auth tables are generated; treat `auth.schema.ts` as build output, not as source.
 - Keep auth code in `src/lib/server/`; never import it from client-side component code.
-- **Authorization is not designed yet.** There is no role or permission model in this project — do not
-  invent admin/moderator concepts without deciding the model deliberately first, and do not assume
-  anything from a previous project's auth scheme exists here.
+- **Authorization is a placeholder, and it has exactly one home:** `src/lib/server/authz.ts`.
+  `requireUser()` guards the `(authenticated)` group; `requireServerManager()` guards `(admin)` and
+  currently admits every signed-in user. The intended rule — `gmlevel` from `acore_auth.account_access`,
+  requiring `SEC_ADMINISTRATOR` — is written down in that file. Change it there, never per route.
+- **Do not add roles to the `user` table.** This project does not use Better Auth's `admin` plugin;
+  permissions are meant to come from AzerothCore, not from the auth schema.

@@ -25,25 +25,37 @@ description: Use when starting any work in this repository or when you need to o
 - [`vite.config.ts`](../../../vite.config.ts) — build config plus the two Vitest projects (jsdom `client` + node `server`).
 - [`playwright.config.ts`](../../../playwright.config.ts) — e2e config and preview port.
 - [`src/lib/server/db/schema.ts`](../../../src/lib/server/db/schema.ts) — schema source of truth.
+- [`src/lib/server/authz.ts`](../../../src/lib/server/authz.ts) — the only place access is decided.
+- [`src/lib/navigation.ts`](../../../src/lib/navigation.ts) — nav data and the active-item rule.
 
 ## Key facts
 
 - **Single SvelteKit application**, `acore-manager`. It is **not a monorepo**: there are no workspaces,
   so `--workspace <name>` flags fail, and there is no `typecheck` or `coverage` script.
-- `src/routes/` — routes (pages, `+page.server.ts` loads and actions).
-- `src/lib/server/` — **server-only** code: `auth.ts` (Better Auth), `db/` (Drizzle client + schema).
-- `src/routes/layout.css` — Tailwind 4 entry point. There is **no `tailwind.config.js`** (Tailwind 4 is CSS-first).
-- `src/hooks.server.ts` — SvelteKit server hooks; `src/app.d.ts` — ambient types; `src/app.html` — HTML shell.
+- `src/routes/` — routes in three **groups**: `(public)` (`/`, `/login`), `(authenticated)`
+  (`/dashboard`, `/accounts`), `(admin)` (`/admin`). The parentheses keep the folder out of the URL, and
+  each group's layout enforces that group's rule.
+- `src/lib/server/` — **server-only** code: `auth.ts` (Better Auth), `authz.ts` (access rules), `db/`
+  (Drizzle client + schema, AzerothCore pools), `acore/` (SOAP console client + protocol helpers).
+- `src/lib/components/site/` — site chrome; `src/lib/auth-client.ts` — browser-side Better Auth client.
+- `src/routes/layout.css` — the Tailwind 4 + Skeleton entry point; `src/themes/azeroth.css` — the
+  project theme. There is **no `tailwind.config.js`** (Tailwind 4 is CSS-first).
+- `src/hooks.server.ts` — SvelteKit server hooks; `src/app.d.ts` — ambient types; `src/app.html` — the
+  HTML shell, carrying `data-theme` and the pre-paint dark-mode script.
 - One **`.env` at the repository root** — not per-workspace files.
-- Stack: SvelteKit 2 + Svelte 5 runes, TypeScript strict/ESM, Tailwind 4, Skeleton v5 + Bits UI +
-  Lucide + Simple Icons (installed, **not yet wired**), Drizzle ORM + drizzle-kit on **MySQL**
-  (`mysql2`), Better Auth, Vite 7, Vitest 3 (`client` jsdom + `server` node projects), Playwright (e2e).
+- Stack: SvelteKit 2 + Svelte 5 runes, TypeScript strict/ESM, Tailwind 4, Skeleton v5 (wired, theme
+  `azeroth`) + Bits UI + Lucide + Simple Icons, Drizzle ORM + drizzle-kit on **MySQL** (`mysql2`),
+  Better Auth, Vite 7, Vitest 3 (`client` jsdom + `server` node projects), Playwright (e2e).
 - Commands: `dev`, `build`, `preview`, `check` (the type gate), `lint`, `format`, `test:unit`
   (**watch mode** — pass `-- --run`), `test`, `test:e2e`, `db:push|generate|migrate|studio`, `auth:schema`.
-- **Status: early scaffolding.** `src/routes/demo/**` and `src/lib/vitest-examples/**` are scaffold
-  placeholders, not features.
-- **No AzerothCore integration exists yet** — accounts, GM levels, characters, bans and live operations
-  are all unbuilt and deliberately deferred.
+- **Status: plumbing done, features not.** Sign-in, the theme, the app shell and the route groups work.
+  `/accounts` is an empty state, and `src/lib/vitest-examples/**` is still a scaffold placeholder (keep it
+  until real tests exist — it is the only spec in the repo).
+- **Authorization is a placeholder.** `isServerManager()` in `src/lib/server/authz.ts` admits any signed-in
+  user, so `/admin` is reachable by anyone who can sign in — deliberate, until the GM level on a linked
+  game account can be read.
+- **AzerothCore integration has started but is thin** — a server-only SOAP console client and lazy
+  `mysql2` pools for `acore_auth` / `acore_world` / `acore_characters`. No account provisioning yet.
 
 ## Steps
 

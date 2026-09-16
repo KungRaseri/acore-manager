@@ -27,12 +27,19 @@ description: Use when building or changing SvelteKit routes, pages, layouts, com
 - [`llms/tailwindcss/llms.txt`](../../../llms/tailwindcss/llms.txt) — Tailwind v4, CSS-first `@theme`/`@utility`/`@variant`.
 - [`AGENTS.md`](../../../AGENTS.md) → Tech stack, Environment & setup, Auth architecture.
 - [`vite.config.ts`](../../../vite.config.ts) — the SvelteKit plugin (runes forced for non-`node_modules` files), adapter, and the two Vitest projects (jsdom `client` + node `server`).
-- [`src/routes/`](../../../src/routes) — existing routes (only scaffold demos so far).
-- [`src/lib/server/`](../../../src/lib/server) — server-only code (`auth.ts`, `db/`).
+- [`src/routes/`](../../../src/routes) — routes in three groups: `(public)`, `(authenticated)`, `(admin)`.
+- [`src/lib/server/`](../../../src/lib/server) — server-only code (`auth.ts`, `authz.ts`, `db/`, `acore/`).
+- [`src/lib/server/authz.ts`](../../../src/lib/server/authz.ts) — `requireUser` / `requireServerManager`.
 
 ## Key facts
 
 - **This is a single SvelteKit app at the repository root.** Routes live in `src/routes/`, not `client/src/routes/`. There are no workspaces, so `--workspace <name>` flags are invalid.
+- **Routes are grouped, and the group layout owns the rule:** `(public)` serves anonymous pages,
+  `(authenticated)` is gated by `requireUser()` (redirecting to `/login?redirectTo=…`), and `(admin)` is
+  gated by `requireUser()` + `requireServerManager()` (403 without permission). Parentheses keep the
+  folder out of the URL, and two groups cannot both own `/` — hence the admin area living at `/admin`.
+  A layout cannot import `$lib/server`, so an authorization fact is computed in `+layout.server.ts` and
+  passed down as data.
 - **Svelte 5 runes** are compiler keywords — no import needed:
   - `$state` → deeply reactive proxies; `$state.raw` (reassign-only), `$state.snapshot` (unproxy).
   - `$derived` / `$derived.by` → derived values; keep the expressions free of side effects.
@@ -60,5 +67,9 @@ description: Use when building or changing SvelteKit routes, pages, layouts, com
 - Never import `src/lib/server/**` or `$env/*/private` from client-side component code.
 - Don't construct the database or auth clients at module scope — the build must stay DB-free.
 - Prefer `$derived` over `$effect` for derived values, and never mutate props (use `$bindable`).
+- **Internal links go through `resolve()`** from `$app/paths` — `<a href={resolve('/x')}>` and
+  `goto(resolve('/x'))`. ESLint's `svelte/no-navigation-without-resolve` fails otherwise, and dynamic
+  values must be resolved where the literal path is known (see `src/lib/navigation.ts`).
+- Read the current URL with `page` from `$app/state` (e.g. `page.url.pathname`), not `$app/stores`.
 - Use keyed `{#each}` blocks for lists, and `{#snippet}` + `{@render}` for reusable markup.
 - Component specs render through `@testing-library/svelte` in jsdom — no browser download is needed for unit tests. Chromium is only needed by the Playwright **e2e** suite.

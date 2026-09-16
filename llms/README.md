@@ -40,8 +40,12 @@ package and this section win**. Verified for the current `node_modules`:
 
 - **Skeleton v5.0.1** — `@skeletonlabs/skeleton` exports `.` (resolving to the package's `index.css`,
   the CSS core) plus `./themes/*` (resolving to `src/themes/*.css`); **24 themes ship**, including
-  `pine`. `@skeletonlabs/skeleton-svelte` exports only `.` and is a **Svelte component library
-  imported from JS/TS — it is not a stylesheet**, despite what some documents imply.
+  `pine`. `@skeletonlabs/skeleton-svelte` exports `.` with **two** conditions: `import` (the components,
+  used from JS/TS) and `style` (pointing at `dist/index.css`, which re-exports the components' CSS from
+  `@skeletonlabs/skeleton-common`). **Both imports belong in the global stylesheet** — without the
+  component one, every Skeleton component renders structurally but unstyled. The Svelte components are
+  Zag.js wrappers styled through `data-scope`/`data-part` selectors. This project registers a custom
+  theme (`src/themes/azeroth.css`) rather than a preset.
 - **Bits UI v2.19.2** — headless primitives; named exports from `bits-ui`.
 - **Vitest 3.2.7 + Vite 7.3.6 + `@sveltejs/vite-plugin-svelte` 6.2.4** — these majors are **coupled**.
   `@sveltejs/kit` 2.x still allows Vite 5–8 and `@tailwindcss/vite` 4.x allows 5–8, but

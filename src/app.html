@@ -1,9 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="azeroth">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<script>
+			// Runs before first paint so the chosen color mode is already in place:
+			// no flash of the wrong mode, and no dependency on a JS bundle.
+			// Dark is the default; `acore-mode: 'light'` is the only opt-out.
+			// Keep the key and the class name in sync with ModeToggle.svelte.
+			try {
+				const mode = localStorage.getItem('acore-mode');
+				document.documentElement.classList.toggle('dark', mode !== 'light');
+			} catch {
+				document.documentElement.classList.add('dark');
+			}
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
