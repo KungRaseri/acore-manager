@@ -70,8 +70,7 @@ jobs:
         continue-on-error: true
         run: npm run lint 2>&1 | tee ci-results/lint.log
 
-      # Needed by BOTH the Vitest browser project (Playwright/Chromium) and the e2e suite,
-      # so it must run before the unit tests.
+      # Needed by the e2e suite only — the Vitest projects run in jsdom / node and need no browser.
       - name: 🌐 Install Playwright browsers
         run: npx playwright install --with-deps chromium
 

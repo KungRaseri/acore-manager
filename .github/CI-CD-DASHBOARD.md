@@ -21,8 +21,8 @@ Steps:
 
 1. 🛒 Checkout → 🔧 Setup Node (22, npm cache) → 📦 `npm ci` → 🗂️ `mkdir -p ci-results`
 2. 🏗️ **Build** (`npm run build`) → 🏗️ **Check** (`npm run check`, the type gate) → 🔎 **Lint** (`npm run lint`)
-3. 🌐 **Install Playwright browsers** (`chromium --with-deps`) — required by the Vitest **browser**
-   project as well as the e2e suite, so it runs _before_ the unit tests
+3. 🌐 **Install Playwright browsers** (`chromium --with-deps`) — required by the **e2e** suite only; the
+   Vitest projects run in jsdom / node and need no browser
 4. 🗄️ **Database bootstrap + migrations** (`node migrate.mjs`) — creates the database if missing, then
    migrates; warns (without failing) while no migrations exist under `drizzle/`
 5. 🧪 **Tests** (`npm run test:unit -- --run --reporter=json --outputFile=ci-results/vitest.json`)
@@ -36,14 +36,14 @@ run's outcome.
 
 ### Gates
 
-| Gate               | Command                      | Notes                                                          |
-| ------------------ | ---------------------------- | -------------------------------------------------------------- |
-| Build              | `npm run build`              | Vite production build                                          |
-| Check              | `npm run check`              | `svelte-kit sync` + `svelte-check`. **This is the type gate.** |
-| Lint               | `npm run lint`               | `prettier --check .` then `eslint .`                           |
-| Database bootstrap | `node migrate.mjs`           | Same script the container entrypoint runs; no-op-safe          |
-| Tests              | `npm run test:unit -- --run` | `--run` is required: the script is `vitest` in watch mode      |
-| e2e                | `npx playwright test`        | Runs the preview server via `playwright.config.ts`             |
+| Gate               | Command                      | Notes                                                                        |
+| ------------------ | ---------------------------- | ---------------------------------------------------------------------------- |
+| Build              | `npm run build`              | Vite production build                                                        |
+| Check              | `npm run check`              | `svelte-kit sync` + `svelte-check`. **This is the type gate.**               |
+| Lint               | `npm run lint`               | `prettier --check .` then `eslint .`                                         |
+| Database bootstrap | `node migrate.mjs`           | Same script the container entrypoint runs; no-op-safe                        |
+| Tests              | `npm run test:unit -- --run` | Vitest on jsdom + node projects; `--run` required (the script is watch mode) |
+| e2e                | `npx playwright test`        | Runs the preview server via `playwright.config.ts`                           |
 
 There is **no coverage gate** in this project — the `coverage` script does not exist and no coverage
 is uploaded.
@@ -60,9 +60,9 @@ Artifacts upload with `if: always()`, so a failed run still gives you the logs.
 
 ## 🛠️ Troubleshooting
 
-- **Playwright browsers missing** (`Executable doesn't exist…`): the Vitest browser project and the
-  e2e suite both need them. Locally run `npx playwright install chromium`; CI installs
-  `--with-deps chromium`.
+- **Playwright browsers missing** (`Executable doesn't exist…`): only the **e2e** suite needs them —
+  unit tests run in jsdom and node. Locally run `npx playwright install chromium` (or `npm run test:e2e`,
+  which installs them); CI installs `--with-deps chromium`.
 - **CI hangs on the test step**: `npm run test:unit` is Vitest's **watch mode**. Always pass `-- --run`
   outside of interactive local use.
 - **`npm ci` fails on the lockfile**: `.npmrc` sets `engine-strict=true` and some transitive

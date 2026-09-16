@@ -54,7 +54,8 @@ The repo ships reusable, tool-agnostic **agent skills** that turn this document 
 - **UI foundation (installed, not yet wired):** **Skeleton v5** (`@skeletonlabs/skeleton` for the CSS core + themes, `@skeletonlabs/skeleton-svelte` for Svelte components), **Bits UI** (`bits-ui`) headless primitives, **Lucide** (`@lucide/svelte`) for general icons, **Simple Icons** (`simple-icons`) for brand marks.
 - **Drizzle ORM + drizzle-kit** on **MySQL** (`mysql2` driver; dialect `mysql`).
 - **Better Auth** for authentication, with **Discord** as the only sign-in provider (email/password is not enabled).
-- **Vite 8** for dev/build; **Vitest 4** for tests (two projects: a browser project on Playwright/Chromium and a node project); **Playwright** for e2e.
+- **Vite 7** for dev/build; **Vitest 3** for unit tests — two projects: a `client` project on **jsdom** (`@testing-library/svelte` + `@testing-library/jest-dom`) and a `server` node project; **Playwright** for e2e only. No unit test runs in a real browser.
+- **Version coupling:** `vite@7` ⇄ `vitest@3` ⇄ `@sveltejs/vite-plugin-svelte@6`. `@sveltejs/kit` accepts Vite 5–8 and `@tailwindcss/vite` accepts 5–8, but `@sveltejs/vite-plugin-svelte@7` requires Vite 8. Bump all three together — a mismatched pair installs a **second, nested copy of Vite**, and `npm run check` then fails on [`vite.config.ts`](vite.config.ts) with incompatible `Plugin` types.
 - **ESLint** (flat config; it reads `.gitignore` via `includeIgnoreFile`) + **Prettier** (tabs, single quotes, no trailing comma, `printWidth` 100, Svelte and Tailwind plugins).
 
 ## Commands

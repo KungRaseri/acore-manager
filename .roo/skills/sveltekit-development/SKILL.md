@@ -26,7 +26,7 @@ description: Use when building or changing SvelteKit routes, pages, layouts, com
 - [`llms/vite/llms-full.txt`](../../../llms/vite/llms-full.txt) — `Features` (HMR), `Configuring Vite`, `Building for Production`.
 - [`llms/tailwindcss/llms.txt`](../../../llms/tailwindcss/llms.txt) — Tailwind v4, CSS-first `@theme`/`@utility`/`@variant`.
 - [`AGENTS.md`](../../../AGENTS.md) → Tech stack, Environment & setup, Auth architecture.
-- [`vite.config.ts`](../../../vite.config.ts) — the SvelteKit plugin (runes forced for non-`node_modules` files), adapter, and the two Vitest projects.
+- [`vite.config.ts`](../../../vite.config.ts) — the SvelteKit plugin (runes forced for non-`node_modules` files), adapter, and the two Vitest projects (jsdom `client` + node `server`).
 - [`src/routes/`](../../../src/routes) — existing routes (only scaffold demos so far).
 - [`src/lib/server/`](../../../src/lib/server) — server-only code (`auth.ts`, `db/`).
 
@@ -45,7 +45,7 @@ description: Use when building or changing SvelteKit routes, pages, layouts, com
 - **Environment:** a single `.env` at the repository root. Import variables server-side through `$env/dynamic/private` (or `$env/static/private` for build-time constants) and only from server-only code.
 - **Server-only modules:** `$env/*/private` and `$lib/server` may only be imported by server-only code — `hooks.server.*`, `+page.server.*`, `+server.*`, `*.server.*`, or within `$lib/server` itself. SvelteKit fails the build if public-facing code reaches them, even indirectly.
 - **Tailwind v4 is CSS-first:** there is no `tailwind.config.js`. The entry point is [`src/routes/layout.css`](../../../src/routes/layout.css).
-- **Vitest projects** (see `vite.config.ts`): a `client` browser project picks up `src/**/*.svelte.{test,spec}.{js,ts}` (excluding `src/lib/server/**`), and a `server` node project picks up `src/**/*.{test,spec}.{js,ts}` (excluding the Svelte specs). `expect.requireAssertions` is **on**, so every test must contain at least one assertion.
+- **Vitest projects** (see `vite.config.ts`): a `client` project running on **jsdom** picks up `src/**/*.svelte.{test,spec}.{js,ts}` (excluding `src/lib/server/**`), and a `server` node project picks up `src/**/*.{test,spec}.{js,ts}` (excluding the Svelte specs). Neither project runs a real browser. `expect.requireAssertions` is **on**, so every test must contain at least one assertion.
 - **Playwright e2e files are matched by `**/*.e2e.{ts,js}`** and run against the preview server on port 4173.
 
 ## Steps
@@ -61,4 +61,4 @@ description: Use when building or changing SvelteKit routes, pages, layouts, com
 - Don't construct the database or auth clients at module scope — the build must stay DB-free.
 - Prefer `$derived` over `$effect` for derived values, and never mutate props (use `$bindable`).
 - Use keyed `{#each}` blocks for lists, and `{#snippet}` + `{@render}` for reusable markup.
-- Remember that the browser Vitest project needs Playwright's Chromium installed (`npx playwright install chromium`).
+- Component specs render through `@testing-library/svelte` in jsdom — no browser download is needed for unit tests. Chromium is only needed by the Playwright **e2e** suite.

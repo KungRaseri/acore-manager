@@ -22,7 +22,7 @@ description: Use when starting any work in this repository or when you need to o
 - [`README.md`](../../../README.md) — project overview, setup, and roadmap.
 - [`package.json`](../../../package.json) — the real scripts and dependencies (the only trustworthy command list).
 - [`drizzle.config.ts`](../../../drizzle.config.ts) — schema path and MySQL dialect.
-- [`vite.config.ts`](../../../vite.config.ts) — build config plus the two Vitest projects (browser + node).
+- [`vite.config.ts`](../../../vite.config.ts) — build config plus the two Vitest projects (jsdom `client` + node `server`).
 - [`playwright.config.ts`](../../../playwright.config.ts) — e2e config and preview port.
 - [`src/lib/server/db/schema.ts`](../../../src/lib/server/db/schema.ts) — schema source of truth.
 
@@ -37,7 +37,7 @@ description: Use when starting any work in this repository or when you need to o
 - One **`.env` at the repository root** — not per-workspace files.
 - Stack: SvelteKit 2 + Svelte 5 runes, TypeScript strict/ESM, Tailwind 4, Skeleton v5 + Bits UI +
   Lucide + Simple Icons (installed, **not yet wired**), Drizzle ORM + drizzle-kit on **MySQL**
-  (`mysql2`), Better Auth, Vite 8, Vitest 4 (browser + node projects), Playwright.
+  (`mysql2`), Better Auth, Vite 7, Vitest 3 (`client` jsdom + `server` node projects), Playwright (e2e).
 - Commands: `dev`, `build`, `preview`, `check` (the type gate), `lint`, `format`, `test:unit`
   (**watch mode** — pass `-- --run`), `test`, `test:e2e`, `db:push|generate|migrate|studio`, `auth:schema`.
 - **Status: early scaffolding.** `src/routes/demo/**` and `src/lib/vitest-examples/**` are scaffold

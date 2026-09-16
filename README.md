@@ -17,8 +17,8 @@ A server and player management website for AzerothCore (World of Warcraft 3.3.5a
 | UI          | Skeleton v5 + Bits UI (headless primitives) + Lucide icons + Simple Icons brand marks — **installed, not yet wired** |
 | Database    | MySQL via Drizzle ORM + drizzle-kit (`mysql2` driver)                                                                |
 | Auth        | Better Auth — Discord OAuth, email/password disabled                                                                 |
-| Build       | Vite 8                                                                                                               |
-| Test        | Vitest 4 (browser + node projects) + Playwright (e2e)                                                                |
+| Build       | Vite 7                                                                                                               |
+| Test        | Vitest 3 (`client` project on jsdom + `server` node project, via `@testing-library/svelte`) + Playwright (e2e only)  |
 | Lint/format | ESLint (flat config) + Prettier (tabs, `printWidth` 100, Svelte + Tailwind plugins)                                  |
 
 ## Requirements

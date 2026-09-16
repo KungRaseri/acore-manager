@@ -30,7 +30,7 @@ llms/
 | `sveltekit/`   | svelte.dev + kit.svelte.dev                                  | Svelte 5 runes + SvelteKit conventions → [`.roo/skills/sveltekit-development`](../.roo/skills/sveltekit-development/SKILL.md)                      |
 | `tailwindcss/` | hand-built (Tailwind's authors do not publish an `llms.txt`) | Tailwind v4, CSS-first `@theme`/`@utility`/`@variant` → `sveltekit-development` + `ui-development`                                                 |
 | `vite/`        | vite.dev                                                     | Vite dev/build/HMR → [`.roo/skills/verification`](../.roo/skills/verification/SKILL.md)                                                            |
-| `vitest/`      | vitest.dev                                                   | Vitest (unit/browser/coverage/mocking) → [`.roo/skills/verification`](../.roo/skills/verification/SKILL.md)                                        |
+| `vitest/`      | vitest.dev                                                   | Vitest (unit testing, mocking, config) → [`.roo/skills/verification`](../.roo/skills/verification/SKILL.md)                                        |
 | `zod/`         | zod.dev                                                      | Zod v4 reference. **Not used in the codebase yet** (transitive dependency only)                                                                    |
 
 ## Verified against the installed packages
@@ -43,6 +43,13 @@ package and this section win**. Verified for the current `node_modules`:
   `pine`. `@skeletonlabs/skeleton-svelte` exports only `.` and is a **Svelte component library
   imported from JS/TS — it is not a stylesheet**, despite what some documents imply.
 - **Bits UI v2.19.2** — headless primitives; named exports from `bits-ui`.
+- **Vitest 3.2.7 + Vite 7.3.6 + `@sveltejs/vite-plugin-svelte` 6.2.4** — these majors are **coupled**.
+  `@sveltejs/kit` 2.x still allows Vite 5–8 and `@tailwindcss/vite` 4.x allows 5–8, but
+  `@sveltejs/vite-plugin-svelte` 7 requires Vite 8. A mismatched pair installs a second, nested copy of
+  Vite under `node_modules/vitest/`, and `svelte-check` then fails on `vite.config.ts` with incompatible
+  `Plugin` types.
+- **Unit tests run in jsdom, not Vitest's `Browser Mode`** — `jsdom` + `@testing-library/svelte` 5
+  (props are the **second** argument to `render`) + `@testing-library/jest-dom`. Playwright is e2e only.
 - **Lucide v1.46.0** — exports `.`, `./icons` and `./icons/*`, so icons are imported individually
   (`@lucide/svelte/icons/<kebab-case-name>`). Corpus text citing "1760 icons in v1.29.0" is stale;
   the authoritative inventory is the installed package.
