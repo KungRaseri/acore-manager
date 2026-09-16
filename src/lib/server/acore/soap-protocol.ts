@@ -64,7 +64,10 @@ export function decodeXmlEntities(value: string): string {
 	return value
 		.replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => codePoint(parseInt(hex, 16)))
 		.replace(/&#(\d+);/g, (_, decimal: string) => codePoint(Number(decimal)))
-		.replace(/&([a-zA-Z]+);/g, (match, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? match);
+		.replace(
+			/&([a-zA-Z]+);/g,
+			(match, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? match
+		);
 }
 
 function codePoint(value: number): string {
@@ -83,8 +86,7 @@ export function buildExecuteCommandEnvelope(command: string): string {
 }
 
 export type SoapResponse =
-	| { kind: 'result'; output: string }
-	| { kind: 'fault'; faultString: string };
+	{ kind: 'result'; output: string } | { kind: 'fault'; faultString: string };
 
 /**
  * Finds an element by local name, ignoring any namespace prefix, and returns its
