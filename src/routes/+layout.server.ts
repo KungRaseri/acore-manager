@@ -9,7 +9,7 @@ import { toCurrentUser } from '$lib/user';
  * that any component can read.
  *
  * Group layouts narrow this further where a signed-in user is required —
- * `(authenticated)` and `(admin)` both redirect when `user` is null.
+ * `(authenticated)` and `(staff)` both redirect when `user` is null.
  */
 export const load = (({ locals }) => ({
 	user: locals.user ? toCurrentUser(locals.user) : null

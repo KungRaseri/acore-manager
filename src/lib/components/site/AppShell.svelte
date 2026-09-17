@@ -14,13 +14,13 @@
 	interface Props {
 		user: CurrentUser;
 		main: NavItem[];
-		admin?: NavItem[];
+		staff?: NavItem[];
 		/** Shown in the top bar on wide screens — usually the current page name. */
 		title?: string;
 		children: Snippet;
 	}
 
-	let { user, main, admin = [], title, children }: Props = $props();
+	let { user, main, staff = [], title, children }: Props = $props();
 
 	// The narrow-viewport drawer. `Dialog` here is Bits UI, not Skeleton's Dialog:
 	// this is a plain side panel with no Skeleton counterpart, so the headless
@@ -55,7 +55,7 @@
 							<Dialog.Description class="sr-only">
 								Links to the pages available to your account.
 							</Dialog.Description>
-							<SiteNav {main} {admin} onNavigate={() => (drawerOpen = false)} />
+							<SiteNav {main} {staff} onNavigate={() => (drawerOpen = false)} />
 						</Dialog.Content>
 					</Dialog.Portal>
 				</Dialog.Root>
@@ -79,7 +79,7 @@
 		<aside class="hidden shrink-0 lg:block">
 			<!-- h-full keeps the sidebar's background reaching the bottom of the
 			     page on routes whose content is shorter than the viewport. -->
-			<SiteNav {main} {admin} class="h-full min-h-full" />
+			<SiteNav {main} {staff} class="h-full min-h-full" />
 		</aside>
 		<main class="min-w-0 flex-1 p-4 lg:p-8">{@render children()}</main>
 	</div>

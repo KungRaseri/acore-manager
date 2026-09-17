@@ -51,10 +51,11 @@ description: Use for an end-to-end feature that spans several areas — from ori
 - Keep the dependency direction clean: components never reach into `src/lib/server/**`; server code
   owns the database and auth.
 - Keep database and auth clients lazy so the build stays DB-free.
-- Prefer deleting scaffold placeholders (`src/routes/demo/**`, `src/lib/vitest-examples/**`) over
-  building alongside them.
-- **Do not invent constraints that do not exist yet.** There is no role/permission model and no
-  AzerothCore integration layer in this project; both are deliberately undecided. If a feature needs
-  them, say so and design them explicitly instead of assuming a scheme.
+- The scaffold placeholders (`src/routes/demo/**`, `src/lib/vitest-examples/**`) are gone; delete
+  leftovers rather than building alongside them.
+- **Build on what exists before inventing a scheme.** There _is_ a permission model — the tiers in
+  `src/lib/access.ts`, enforced by `$lib/server/authz.ts` and the folder floors under `/staff` — and
+  there is an AzerothCore integration layer. Reuse them instead of adding a second way to decide access,
+  and remember that a form action checks for itself.
 - Do not copy conventions from the project this scaffold was copied from — check that a pattern is
   actually present here before following it.

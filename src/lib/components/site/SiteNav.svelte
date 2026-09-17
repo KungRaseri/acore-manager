@@ -5,19 +5,19 @@
 
 	interface Props {
 		main: NavItem[];
-		admin?: NavItem[];
+		staff?: NavItem[];
 		/** Invoked when a link is activated — the mobile drawer uses it to close itself. */
 		onNavigate?: () => void;
 		class?: string;
 	}
 
-	let { main, admin = [], onNavigate, class: className = '' }: Props = $props();
+	let { main, staff = [], onNavigate, class: className = '' }: Props = $props();
 </script>
 
 <!--
-	One snippet, two groups: the player routes and the server routes differ only
-	by which array they render, so the active-item rule stays in `isNavActive`
-	and the visual states stay in one place.
+	One snippet, two groups: the player and staff sections differ only by which
+	array they render, so the active-item rule stays in `isNavActive` and the
+	visual states stay in one place.
 
 	`Navigation.TriggerAnchor` already carries Skeleton's `btn hover:preset-tonal`
 	styling; the active item adds the tonal preset on top, and utilities beat the
@@ -50,10 +50,10 @@
 			</Navigation.Group>
 		{/if}
 
-		{#if admin.length > 0}
+		{#if staff.length > 0}
 			<Navigation.Group>
-				<Navigation.Label>Server</Navigation.Label>
-				{@render navMenu(admin)}
+				<Navigation.Label>Staff</Navigation.Label>
+				{@render navMenu(staff)}
 			</Navigation.Group>
 		{/if}
 	</Navigation.Content>

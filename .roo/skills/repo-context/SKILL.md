@@ -33,8 +33,10 @@ description: Use when starting any work in this repository or when you need to o
 - **Single SvelteKit application**, `acore-manager`. It is **not a monorepo**: there are no workspaces,
   so `--workspace <name>` flags fail, and there is no `typecheck` or `coverage` script.
 - `src/routes/` — routes in three **groups**: `(public)` (`/`, `/login`), `(authenticated)`
-  (`/dashboard`, `/accounts`), `(admin)` (`/admin`). The parentheses keep the folder out of the URL, and
-  each group's layout enforces that group's rule.
+  (`/dashboard`, `/accounts`), `(staff)` (`/staff`). The parentheses keep the folder out of the URL, and
+  each group's layout enforces that group's rule. The staff area is tiered by folder name:
+  `/staff/moderator`, `/staff/gm` and `/staff/admin` each state their floor, and each declares it on its
+  own layout.
 - `src/lib/server/` — **server-only** code: `auth.ts` (Better Auth), `authz.ts` (access rules), `db/`
   (Drizzle client + schema, AzerothCore pools), `acore/` (SOAP console client + protocol helpers).
 - `src/lib/components/site/` — site chrome; `src/lib/auth-client.ts` — browser-side Better Auth client.
@@ -48,14 +50,16 @@ description: Use when starting any work in this repository or when you need to o
   Better Auth, Vite 7, Vitest 3 (`client` jsdom + `server` node projects), Playwright (e2e).
 - Commands: `dev`, `build`, `preview`, `check` (the type gate), `lint`, `format`, `test:unit`
   (**watch mode** — pass `-- --run`), `test`, `test:e2e`, `db:push|generate|migrate|studio`, `auth:schema`.
-- **Status: plumbing done, features not.** Sign-in, the theme, the app shell and the route groups work.
-  `/accounts` is an empty state, and `src/lib/vitest-examples/**` is still a scaffold placeholder (keep it
-  until real tests exist — it is the only spec in the repo).
-- **Authorization is a placeholder.** `isServerManager()` in `src/lib/server/authz.ts` admits any signed-in
-  user, so `/admin` is reachable by anyone who can sign in — deliberate, until the GM level on a linked
-  game account can be read.
-- **AzerothCore integration has started but is thin** — a server-only SOAP console client and lazy
-  `mysql2` pools for `acore_auth` / `acore_world` / `acore_characters`. No account provisioning yet.
+- **Status: game accounts work end to end; management features are next.** Sign-in, the theme, the app
+  shell and the route groups work, `/accounts` creates and links game accounts, and the scaffold
+  placeholders (`src/routes/demo/**`, `src/lib/vitest-examples/**`) are gone.
+- **Authorization is real and tiered.** `src/lib/server/authz.ts` resolves the profile's GM level from
+  `acore_auth.account_access` across its linked game accounts, and the `/staff` folder layouts enforce
+  their floors. The level is read per request and never cached, and a level that cannot be read means a
+  player.
+- **AzerothCore integration has started but is thin** — a server-only SOAP console client, lazy `mysql2`
+  pools for `acore_auth` / `acore_world` / `acore_characters`, and the read-only GM-level query. Account
+  provisioning is done; characters, bans and live operations are not.
 
 ## Steps
 

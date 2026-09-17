@@ -25,6 +25,17 @@ function toState(action: ActionState['action'], result: AccountResult): ActionSt
 	return { action, result };
 }
 
+/*
+	The actions below call `requireUser` and nothing more, and that is deliberate
+	rather than an oversight. Each one works strictly on the caller's own
+	`user.id`: the account it creates, claims or unlinks is by definition theirs,
+	so there is no elevation to grant and no other profile's data to protect.
+
+	An action that ever touches somebody else's accounts needs its own `require*`
+	check, because a layout does not guard actions — SvelteKit runs them before
+	the page's load functions. See `$lib/server/authz`.
+*/
+
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = requireUser(locals.user ? toCurrentUser(locals.user) : null, url.pathname);
 

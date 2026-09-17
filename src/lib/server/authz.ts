@@ -1,35 +1,141 @@
+import { eq } from 'drizzle-orm';
 import { error, redirect } from '@sveltejs/kit';
+import { PLAYER_ACCESS, SEC_PLAYER, tierAtLeast, tierForLevel, type Access } from '$lib/access';
+import { readAccountLevels } from '$lib/server/acore/access';
+import { getDb } from '$lib/server/db';
+import { gameAccount } from '$lib/server/db/schema';
 import type { CurrentUser } from '$lib/user';
 
 /**
  * Authorization.
  *
  * The single place that answers "may this user do this?". Layouts call the
- * `require*` helpers, which redirect a signed-out visitor and refuse a
- * signed-in one who is not allowed — so when the rule changes, it changes here
- * and every gated route follows. Nothing else in the app should be inventing
- * access checks.
+ * `require*` helpers, so when the rule changes it changes here and every gated
+ * route follows. Nothing else in the app should be inventing access checks.
  *
- * ## The server-management gate is currently open — deliberately
+ * ## The rule
  *
- * The intended rule is the GM level on the AzerothCore game account linked to
- * the signed-in user, read from `acore_auth`:
+ * A visitor's access is the GM level on the AzerothCore game accounts linked to
+ * their profile, read from `acore_auth` through `$lib/server/acore/access`:
  *
- *   SELECT aa.gmlevel
- *   FROM account_access aa
- *   JOIN account a ON a.id = aa.id
- *   WHERE a.username = ? AND aa.RealmID = -1;
+ *   SELECT MAX(aa.gmlevel)
+ *   FROM account a LEFT JOIN account_access aa ON aa.id = a.id
+ *   WHERE a.username IN (…)
  *
- * `SEC_ADMINISTRATOR` (gmlevel 3) is the level the worldserver's SOAP console
- * itself demands, so a lower level could sign in but never act.
+ * [`tierForLevel`](src/lib/access.ts) maps that number onto the site's ladder,
+ * and the `require*` helpers compare the tier. The effective level is the
+ * highest across the profile's linked accounts, so a second, more privileged
+ * account is never a downgrade.
  *
- * That rule cannot be written yet, and deliberately is not guessed here: no
- * table links a website user to a game account, and account linking is not
- * built. Until it is, this admits every signed-in user — the explicit project
- * decision. Treat it as a placeholder, not as a permission model.
+ * `SEC_ADMINISTRATOR` (gmlevel 3) is the level the worldserver's own SOAP
+ * console demands, which is why it is the tier that unlocks everything which can
+ * act on the server. A profile with no linked game account has no level and is
+ * a player: linking is done on the accounts page, and it is the prerequisite for
+ * every staff page.
+ *
+ * ## Where the checks belong
+ *
+ * A route's group or folder layout calls the `require*` helpers, and a page does
+ * not re-check — the layout has already refused anyone below its floor.
+ *
+ * **Actions are the exception and must check for themselves.** SvelteKit runs an
+ * action *before* the page's load functions, so a layout's 403 arrives only after
+ * the action has already run its side effects. Every action that does anything a
+ * plain player may not has to call a `require*` helper itself.
+ *
+ * ## Nothing is cached
+ *
+ * `getAccess` memoises **within one request** and nowhere else. Nothing is put on
+ * the session, in a module-level map, or in a column of `game_account`, so a
+ * level changed in the database applies to the very next request and there is no
+ * stale state to reason about. The cost is two indexed queries per signed-in
+ * request, which is the deliberate price of that property.
+ *
+ * ## Failing closed
+ *
+ * A level this site cannot read is a level it must not assume. If AzerothCore is
+ * unreachable or `ACORE_DATABASE_URL` is unset, the visitor is treated as a
+ * player and the failure is logged — never the other way around.
  */
-export function isServerManager(user: CurrentUser | null): boolean {
-	return user !== null;
+
+/**
+ * The level and tier of one profile, resolved from both databases.
+ *
+ * Prefer [`getAccess`](#getAccess), which memoises this per request.
+ */
+export async function resolveAccess(userId: string): Promise<Access> {
+	try {
+		const linked = await getDb()
+			.select({ username: gameAccount.username })
+			.from(gameAccount)
+			.where(eq(gameAccount.userId, userId));
+
+		if (linked.length === 0) {
+			// No linked game account means no GM level exists to read, so
+			// AzerothCore is not queried at all.
+			return PLAYER_ACCESS;
+		}
+
+		const levels = await readAccountLevels(linked.map((account) => account.username));
+		const level = [...levels.values()].reduce(
+			(highest, current) => Math.max(highest, current),
+			SEC_PLAYER
+		);
+
+		return { tier: tierForLevel(level), level };
+	} catch (cause) {
+		/*
+			A broken link to AzerothCore must not 500 every page in the app, and it
+			must not grant access it could not verify — so it is logged and the
+			visitor is a player. Failing open is rejected on purpose.
+		*/
+		console.error(
+			'[authz] could not read AzerothCore GM levels; treating this user as a player',
+			cause
+		);
+
+		return PLAYER_ACCESS;
+	}
+}
+
+/**
+ * Request-scoped memoisation of [`resolveAccess`](#resolveAccess).
+ *
+ * Keyed by the request's own `locals` object, which SvelteKit creates per
+ * request and discards afterwards — so the entry dies with the request and this
+ * is **not** a cache. A layout load, a page load and an action all ask, and all
+ * share one lookup.
+ *
+ * Do not replace this with a module-level map or a TTL: a GM level that lags
+ * behind the database is exactly the state this design refuses to have.
+ */
+const accessByLocals = new WeakMap<App.Locals, Promise<Access>>();
+
+export function getAccess(locals: App.Locals): Promise<Access> {
+	const userId = locals.user?.id;
+
+	if (!userId) {
+		return Promise.resolve(PLAYER_ACCESS);
+	}
+
+	const pending = accessByLocals.get(locals);
+
+	if (pending) {
+		return pending;
+	}
+
+	// Stored before it settles, so concurrent callers in the same request await
+	// the same lookup instead of duplicating it.
+	const resolving = resolveAccess(userId);
+
+	accessByLocals.set(locals, resolving);
+
+	return resolving;
+}
+
+/** Whether the profile may act on the server at all: the highest tier. */
+export function isServerManager(access: Access): boolean {
+	return tierAtLeast(access.tier, 'administrator');
 }
 
 /**
@@ -46,9 +152,23 @@ export function requireUser(user: CurrentUser | null, redirectTo: string): Curre
 	return user;
 }
 
-/** Refuses a signed-in user the management area is not open to. */
-export function requireServerManager(user: CurrentUser): void {
-	if (!isServerManager(user)) {
+/** Refuses a signed-in visitor the staff area is not open to. */
+export function requireStaff(access: Access): void {
+	if (!tierAtLeast(access.tier, 'moderator')) {
+		error(403, 'The staff area is not open to this account.');
+	}
+}
+
+/** Refuses a staff member whose linked game account is below game master. */
+export function requireGameMaster(access: Access): void {
+	if (!tierAtLeast(access.tier, 'game-master')) {
+		error(403, 'This page needs a game master level on a linked game account.');
+	}
+}
+
+/** Refuses a signed-in user the server-management pages are not open to. */
+export function requireServerManager(access: Access): void {
+	if (!isServerManager(access)) {
 		error(403, 'Your account is not allowed to manage this server.');
 	}
 }

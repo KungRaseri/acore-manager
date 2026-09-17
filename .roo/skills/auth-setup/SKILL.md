@@ -60,9 +60,12 @@ description: Use when working with authentication — Better Auth configuration,
 - `sveltekitCookies` stays last in the plugins array.
 - Auth tables are generated; treat `auth.schema.ts` as build output, not as source.
 - Keep auth code in `src/lib/server/`; never import it from client-side component code.
-- **Authorization is a placeholder, and it has exactly one home:** `src/lib/server/authz.ts`.
-  `requireUser()` guards the `(authenticated)` group; `requireServerManager()` guards `(admin)` and
-  currently admits every signed-in user. The intended rule — `gmlevel` from `acore_auth.account_access`,
-  requiring `SEC_ADMINISTRATOR` — is written down in that file. Change it there, never per route.
+- **Authorization is tiered, and it has exactly one home:** `src/lib/server/authz.ts`. It resolves the GM
+  level from `acore_auth.account_access` across the profile's linked game accounts and compares tiers:
+  `requireUser()` for the `(authenticated)` group, `requireStaff()` for `/staff`, and
+  `requireGameMaster()` / `requireServerManager()` for the folders beneath it. Change the rule there,
+  never per route.
+- **An action checks for itself.** SvelteKit runs a form action before the page's load functions, so a
+  layout's 403 arrives too late to stop one — a gated action calls a `require*` helper at the top.
 - **Do not add roles to the `user` table.** This project does not use Better Auth's `admin` plugin;
   permissions are meant to come from AzerothCore, not from the auth schema.

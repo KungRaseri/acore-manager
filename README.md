@@ -2,10 +2,10 @@
 
 A server and player management website for AzerothCore (World of Warcraft 3.3.5a) servers.
 
-> **Status: early scaffolding, with the plumbing in place.** Sign-in (Discord), the database
-> bootstrap and the container build all work. The remaining routes under `src/routes/demo/**` and the
-> helpers under `src/lib/vitest-examples/**` are scaffold demos, not product features. The AzerothCore
-> integration layer has not been built yet — see [Roadmap](#roadmap).
+> **Status: sign-in, game accounts and tiered staff access all work.** Discord sign-in, the database
+> bootstrap, the container build, game account creation and linking, and the AzerothCore GM-level gate
+> behind the `/staff` area are in place. Characters, bans and live operations are not — see
+> [Roadmap](#roadmap).
 
 ## Stack
 
@@ -165,10 +165,10 @@ The same two commands work outside Docker — that is exactly what the container
 
 ## Roadmap
 
-1. **Finish cleaning the scaffold** — remove the remaining `/demo` routes and `src/lib/vitest-examples/**`,
-   wire up Tailwind + Skeleton, and replace the placeholder theme.
-2. **Define the management domain** — accounts, GM levels, characters, bans, live operations.
-3. **AzerothCore integration** — deliberately deferred. Before any of it is built, document the
-   integration surfaces (the shared `acore_auth`/`acore_world`/`acore_characters` databases, the
-   world server's SOAP console, and offline SRP6 account provisioning) and the security rules that
-   go with them.
+1. **Scaffold cleanup** — _done_: the `/demo` routes, `src/lib/vitest-examples/**`, the placeholder theme
+   and the unwired UI stack are all gone.
+2. **Game accounts and the access gate** — _done_: accounts are created through the worldserver's own
+   console and linked to a profile, and the GM level on the linked account decides what `/staff` shows
+   and what it lets you do.
+3. **Characters, bans and live operations** — the rest of the management domain, on top of
+   `acore_characters` and the SOAP console.

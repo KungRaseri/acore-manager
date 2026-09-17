@@ -15,7 +15,7 @@ acore-manager is a **server and player management website for AzerothCore** (Wor
 
 | Path                                                                   | Role                                                                                       |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| [`src/routes/`](src/routes)                                            | SvelteKit routes, grouped into `(public)`, `(authenticated)` and `(admin)`                 |
+| [`src/routes/`](src/routes)                                            | SvelteKit routes, grouped into `(public)`, `(authenticated)` and `(staff)`                 |
 | [`src/routes/layout.css`](src/routes/layout.css)                       | Tailwind 4 entry point; also the stylesheet Prettier uses for Tailwind class sorting       |
 | [`src/hooks.server.ts`](src/hooks.server.ts)                           | SvelteKit server hooks                                                                     |
 | [`src/app.html`](src/app.html)                                         | HTML shell; where a Skeleton `data-theme` attribute belongs                                |
@@ -33,6 +33,8 @@ acore-manager is a **server and player management website for AzerothCore** (Wor
 | [`src/lib/user.ts`](src/lib/user.ts)                                   | `CurrentUser` — the user shape the UI is allowed to see                                    |
 | [`src/lib/auth-client.ts`](src/lib/auth-client.ts)                     | Browser-side Better Auth client (sign-out; later account linking)                          |
 | [`src/lib/server/authz.ts`](src/lib/server/authz.ts)                   | Authorization — the one place that answers "may this user do this?"                        |
+| [`src/lib/access.ts`](src/lib/access.ts)                               | The tier vocabulary — `SEC_*` constants and the level-to-tier mapping                      |
+| [`src/lib/server/acore/access.ts`](src/lib/server/acore/access.ts)     | GM levels read from `acore_auth.account_access`, one query, read-only                      |
 | [`src/lib/server/accounts/`](src/lib/server/accounts)                  | Game accounts — console provisioning, SRP6 credential check, linking                       |
 | [`.roo/skills/`](.roo/skills)                                          | Reusable agent skills; catalog in [`.roo/skills/README.md`](.roo/skills/README.md)         |
 | [`llms/`](llms)                                                        | Third-party `llms.txt` reference corpora; provenance in [`llms/README.md`](llms/README.md) |
@@ -132,17 +134,36 @@ copy .env.example .env     # Windows (cp .env.example .env elsewhere)
 
 Routes are grouped, and the group layout carries the rule:
 
-| Group                        | URLs                      | Layout does                                                          |
-| ---------------------------- | ------------------------- | -------------------------------------------------------------------- |
-| `src/routes/(public)`        | `/`, `/login`             | Public chrome (header + footer); serves anonymous visitors           |
-| `src/routes/(authenticated)` | `/dashboard`, `/accounts` | `requireUser()` — redirects to `/login?redirectTo=…` when signed out |
-| `src/routes/(admin)`         | `/admin`                  | `requireUser()` then `requireServerManager()` — 403 when not allowed |
+| Group                        | URLs                      | Layout does                                                                                                  |
+| ---------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `src/routes/(public)`        | `/`, `/login`             | Public chrome (header + footer); serves anonymous visitors                                                   |
+| `src/routes/(authenticated)` | `/dashboard`, `/accounts` | `requireUser()` — redirects to `/login?redirectTo=…` when signed out                                         |
+| `src/routes/(staff)`         | `/staff`, `/staff/**`     | `requireUser()` then `requireStaff()` — 403 below gmlevel 1; folders beneath carry their own, stricter floor |
 
 - Parentheses mean the folder **does not appear in the URL**: `(public)/login` serves `/login`.
-- Two groups cannot both own `/`, which is why the admin area lives under `/admin`.
-- **Authorization lives in [`src/lib/server/authz.ts`](src/lib/server/authz.ts) and nowhere else.** Layouts call `requireUser` / `requireServerManager`; pages do not re-check. `isServerManager` currently admits every signed-in user — the explicit project decision — and that file documents the GM-level query that will replace it.
+- Two groups cannot both own `/`.
+- **Authorization lives in [`src/lib/server/authz.ts`](src/lib/server/authz.ts) and nowhere else.** Group and folder layouts call the `require*` helpers; pages do not re-check.
+- **An action is not covered by a layout.** SvelteKit runs a form action _before_ the page's `load` functions, so a layout's 403 arrives after the action has already run its side effects. Any action that does something a plain player may not calls a `require*` helper itself — and the accounts actions document why `requireUser` alone is enough for them.
 - `safeRedirectTarget()` guards the `redirectTo` parameter: only same-site paths survive, because the value reaches an OAuth `callbackURL`.
-- Client components cannot import `$lib/server`, so a layout that needs an authorization fact computes it in `+layout.server.ts` and passes it down as data (see `showAdminNav` in the `(authenticated)` layout).
+- Client components cannot import `$lib/server`, so a layout that needs an authorization fact computes it in `+layout.server.ts` and passes it down as data. What crosses is the **fact** — the tier — never a `NavItem`: an item carries an icon component and load data is serialized as JSON. The shell filters the static nav arrays with the tier it is given, which is cosmetic, since the route an item points at is what the layout guards.
+
+### The tier ladder
+
+Access is the GM level on the game accounts linked to a profile, read from `acore_auth.account_access`:
+
+| Route              | Floor                                                      |
+| ------------------ | ---------------------------------------------------------- |
+| `/staff`           | `SEC_MODERATOR` (1) and up — the staff dashboard           |
+| `/staff/moderator` | `SEC_MODERATOR` (1) and up — moderation tools              |
+| `/staff/gm`        | `SEC_GAMEMASTER` (2) and up — read-only diagnostics        |
+| `/staff/admin`     | `SEC_ADMINISTRATOR` (3) and up — what can act on the realm |
+
+- **The folder name is the floor, and that is part of the contract.** A tool lives in the folder matching its _softest_ audience, and a leaf may be stricter than its folder but never laxer. [`src/lib/server/staff-routes.spec.ts`](src/lib/server/staff-routes.spec.ts) walks the route tree and fails the build when a folder with a page does not declare a floor at or above the one its name implies — because the group layout carries the _weakest_ rule, a folder with no layout would otherwise inherit it silently.
+- The ladder as vocabulary is [`src/lib/access.ts`](src/lib/access.ts), deliberately client-safe so the nav and the layouts name the same tiers. The query is [`src/lib/server/acore/access.ts`](src/lib/server/acore/access.ts), read-only and indexed, `MAX(gmlevel)` across the profile's linked accounts.
+- **Any `account_access` row counts, whatever its `RealmID`** — this site has no realm model, so a realm-scoped game master has site-wide staff access. A known widening, recorded in [`plans/gm-level-gating.md`](plans/gm-level-gating.md).
+- **Nothing is cached.** The level is resolved on every request and memoised only within that request, so a change applies to the next request and there is no stale state. The cost is two indexed queries per signed-in request.
+- **It fails closed.** A level that cannot be read — AzerothCore unreachable, `ACORE_DATABASE_URL` unset — means `player`, logged, never a 500 and never staff access.
+- A profile with no linked game account has no level and sees no staff page; linking one on the accounts page is the prerequisite.
 
 ## AzerothCore integration
 
@@ -201,7 +222,7 @@ Creating and linking a game account lives in [`src/lib/server/accounts/`](src/li
 - The auth tables are the generated ones in `auth.schema.ts`, re-exported alongside the project schema.
 - **Sign-in is Discord only.** [`src/routes/(public)/login/`](<src/routes/(public)/login>) posts to a form action that asks Better Auth for the Discord authorization URL and redirects the browser to it. The scaffold's email/password demo has been deleted.
 - The Discord application must list this redirect URI: `<ORIGIN>/api/auth/callback/discord`.
-- **Authorization is a placeholder, and it has one home.** [`src/lib/server/authz.ts`](src/lib/server/authz.ts) decides access: `requireUser()` for the `(authenticated)` group, `requireServerManager()` for `(admin)`. The latter admits any signed-in user today — deliberate, and documented in that file — until the GM level on a linked game account can be read from `acore_auth`. Do not add per-route checks elsewhere and do not assume a role model exists. (Note: this is not the Better Auth `admin` plugin; roles are not stored on `user`.)
+- **Authorization is tiered, and it has one home.** [`src/lib/server/authz.ts`](src/lib/server/authz.ts) decides access: `requireUser()` for the `(authenticated)` group, `requireStaff()` for `/staff`, and `requireGameMaster()` / `requireServerManager()` for the folders beneath it. The level is read from `acore_auth` on every request and never cached — see [The tier ladder](#the-tier-ladder). Do not add per-route checks elsewhere. (Note: this is not the Better Auth `admin` plugin; roles are not stored on `user`, because permissions come from AzerothCore.)
 
 ## UI & design system
 
@@ -225,29 +246,28 @@ Rules for UI work:
 - Prefer a styled Skeleton component for chrome and layout; reach for Bits UI only where Skeleton has no fit.
 - Read the specific component section of [`llms/skeletondev/llms-full.txt`](llms/skeletondev/llms-full.txt) or [`llms/bitsui/llms-full.txt`](llms/bitsui/llms-full.txt) before writing markup.
 
-## Scaffold placeholders to replace
+## Scaffold placeholders — all removed
 
-These came from `sv create` and are not product features:
+Everything `sv create` left behind is gone: the `/demo` routes, the `pine` theme, the unwired UI stack
+and [`src/lib/vitest-examples/`](src/lib/vitest-examples).
 
-- The `/demo` routes are **gone**; the Playwright smoke test that pointed at them now covers the public landing page ([`src/routes/(public)/page.e2e.ts`](<src/routes/(public)/page.e2e.ts>)).
-- [`src/lib/vitest-examples/`](src/lib/vitest-examples) — `greet.ts`, its specs and the `Welcome` component. **Delete them only once real tests exist**, because they are currently the only specs in the repository and both `npm run test:unit -- --run` and `playwright test` fail when no test files match.
-- The placeholder `pine` theme and the unwired UI stack are **gone**; the `azeroth` theme replaced them.
+- The Playwright smoke test that pointed at `/demo` now covers the public landing page ([`src/routes/(public)/page.e2e.ts`](<src/routes/(public)/page.e2e.ts)).
+- Real specs replaced `vitest-examples`, so both `npm run test:unit -- --run` and `playwright test` have files to match — see [`src/lib/access.spec.ts`](src/lib/access.spec.ts) and [`src/lib/server/staff-routes.spec.ts`](src/lib/server/staff-routes.spec.ts).
+- The `azeroth` theme replaced the placeholder theme.
 
 ## Known issues
 
-- **Authorization is open.** `isServerManager()` admits every signed-in user, so `/admin` is reachable by
-  anyone who can sign in. Deliberate, until the GM level on a linked game account can be read — see
+- **Staff access needs a linked game account.** A staff member who has not linked one has no level to
+  read, so the staff area stays closed to them until they do — see
   [Route groups & authorization](#route-groups--authorization).
-- **The authorization rule is still missing.** `game_account` now maps a profile to a game account, so
-  what remains is reading the GM level for that account — see
-  [Route groups & authorization](#route-groups--authorization).
+- **`account_access` changes land here before they land in game.** The site reads the table directly,
+  while the worldserver keeps its own copy in memory until it reloads.
 - **The UI is dark by default.** `app.html` adds `.dark` unless the visitor opted into light mode;
   nothing follows `prefers-color-scheme`.
-- **`game_account` has no migration yet.** The table is declared in `schema.ts` and the feature works
-  end to end once it exists, but `drizzle/` still holds only the Better Auth migration — run
-  `npm run db:generate` and commit the result.
-- **The console UI is deliberately read-only.** `/admin` can run `.server info`; there is no command box
-  until access is decided by GM level.
+- **The console UI is deliberately read-only.** `/staff/gm` can run `.server info`; the command box is
+  still to come, and `/staff/admin` is where it lands.
+- **`/staff/admin` is a placeholder.** The tier-3 route exists so the highest floor is real and testable
+  before the tooling does; what belongs there is roadmap item 4.
 - **e2e tests need a live database and downloaded browsers**, so `npm run test:e2e` is not part of routine
   verification — but `playwright test` does expect at least one matching spec.
 
@@ -294,13 +314,15 @@ node build/index.js   # serve (PORT, default 3000)
 ## Roadmap
 
 1. **UI, theming and route groups.** _Done_ — the `azeroth` theme, the site chrome, the
-   `(public)` / `(authenticated)` / `(admin)` groups and the centralized `authz` helper.
+   `(public)` / `(authenticated)` / `(staff)` groups and the centralized `authz` helper.
 2. **Game accounts — create and link.** _Done_ — creation runs the worldserver's own `account create`
    over SOAP, linking verifies the account's password against the credentials stored in `acore_auth`, and
-   `game_account` records the result against a profile. Remaining: generate the migration, and decide what
-   staff tooling should exist around a link (who may detach one, and what happens to the account).
-3. **Close the authorization gate.** Read `gmlevel` from `acore_auth.account_access` for the linked game
-   account, require `SEC_ADMINISTRATOR`, and replace `isServerManager()`.
+   `game_account` records the result against a profile (migrated in
+   [`0001_awesome_tombstone.sql`](drizzle/0001_awesome_tombstone.sql)). Remaining: decide what staff
+   tooling should exist around a link — who may detach one, and what happens to the account.
+3. **Close the authorization gate.** _Done_ — `gmlevel` is read from `acore_auth.account_access` for the
+   profile's linked game accounts, and each folder under `/staff` enforces its own floor. Remaining: per-realm
+   scoping, should a realm model ever exist.
 4. **Characters, bans and live operations** — the rest of the management domain, on top of
    `acore_characters` and the SOAP console.
 5. **AzerothCore integration rules.** What already applies is in

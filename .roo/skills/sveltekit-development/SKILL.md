@@ -27,19 +27,23 @@ description: Use when building or changing SvelteKit routes, pages, layouts, com
 - [`llms/tailwindcss/llms.txt`](../../../llms/tailwindcss/llms.txt) — Tailwind v4, CSS-first `@theme`/`@utility`/`@variant`.
 - [`AGENTS.md`](../../../AGENTS.md) → Tech stack, Environment & setup, Auth architecture.
 - [`vite.config.ts`](../../../vite.config.ts) — the SvelteKit plugin (runes forced for non-`node_modules` files), adapter, and the two Vitest projects (jsdom `client` + node `server`).
-- [`src/routes/`](../../../src/routes) — routes in three groups: `(public)`, `(authenticated)`, `(admin)`.
+- [`src/routes/`](../../../src/routes) — routes in three groups: `(public)`, `(authenticated)`, `(staff)`.
 - [`src/lib/server/`](../../../src/lib/server) — server-only code (`auth.ts`, `authz.ts`, `db/`, `acore/`).
-- [`src/lib/server/authz.ts`](../../../src/lib/server/authz.ts) — `requireUser` / `requireServerManager`.
+- [`src/lib/server/authz.ts`](../../../src/lib/server/authz.ts) — `requireUser`, `requireStaff`,
+  `requireGameMaster`, `requireServerManager`.
 
 ## Key facts
 
 - **This is a single SvelteKit app at the repository root.** Routes live in `src/routes/`, not `client/src/routes/`. There are no workspaces, so `--workspace <name>` flags are invalid.
-- **Routes are grouped, and the group layout owns the rule:** `(public)` serves anonymous pages,
-  `(authenticated)` is gated by `requireUser()` (redirecting to `/login?redirectTo=…`), and `(admin)` is
-  gated by `requireUser()` + `requireServerManager()` (403 without permission). Parentheses keep the
-  folder out of the URL, and two groups cannot both own `/` — hence the admin area living at `/admin`.
-  A layout cannot import `$lib/server`, so an authorization fact is computed in `+layout.server.ts` and
-  passed down as data.
+- **Routes are grouped, and the layout owns the rule:** `(public)` serves anonymous pages,
+  `(authenticated)` is gated by `requireUser()` (redirecting to `/login?redirectTo=…`), and `(staff)` is
+  the staff area, where `/staff/moderator`, `/staff/gm` and `/staff/admin` each declare their own floor
+  on their own layout (403 below it). Parentheses keep the folder out of the URL, and two groups cannot
+  both own `/`. A layout cannot import `$lib/server`, so an authorization fact is computed in
+  `+layout.server.ts` and passed down as data.
+- **A form action is not covered by its layout.** SvelteKit runs an action _before_ the page's load
+  functions, so a layout's 403 arrives after the action has already run. An action that changes anything
+  gated calls a `require*` helper itself.
 - **Svelte 5 runes** are compiler keywords — no import needed:
   - `$state` → deeply reactive proxies; `$state.raw` (reassign-only), `$state.snapshot` (unproxy).
   - `$derived` / `$derived.by` → derived values; keep the expressions free of side effects.

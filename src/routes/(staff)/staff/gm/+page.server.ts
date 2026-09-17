@@ -1,5 +1,6 @@
 import type { Actions, PageServerLoad } from './$types';
 import { getServerInfo, isSoapConfigured } from '$lib/server/acore';
+import { getAccess, requireGameMaster } from '$lib/server/authz';
 
 /**
  * One result shape for every outcome so the page never has to narrow a union.
@@ -24,7 +25,18 @@ export const load = (() => ({
 })) satisfies PageServerLoad;
 
 export const actions = {
-	check: async () => {
+	/**
+	 * Re-checks the floor before doing anything.
+	 *
+	 * SvelteKit runs an action *before* the page's load functions, so by the time
+	 * this runs, the layout that guards this folder has not refused anybody:
+	 * without the line below, any POST to `?/check` would spend the site's
+	 * administrator SOAP credential whatever tier the sender had. See the
+	 * "Actions are the exception" note in `$lib/server/authz`.
+	 */
+	check: async ({ locals }) => {
+		requireGameMaster(await getAccess(locals));
+
 		if (!isSoapConfigured()) {
 			return {
 				check: {

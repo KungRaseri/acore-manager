@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -8,10 +9,10 @@
 
 <div class="mx-auto flex w-full max-w-4xl flex-col gap-8">
 	<header class="flex flex-col gap-2">
-		<h1 class="h2">Server overview</h1>
+		<h1 class="h2">Server diagnostics</h1>
 		<p class="max-w-prose opacity-80">
 			How this website is wired to the AzerothCore servers, and a read-only way to confirm the
-			worldserver is answering.
+			worldserver is answering. Open from gmlevel 2.
 		</p>
 	</header>
 
@@ -71,12 +72,12 @@
 	<section
 		class="flex flex-col gap-2 card border border-surface-200-800 preset-filled-surface-100-900 p-6"
 	>
-		<h2 class="h5">Why there is no command box</h2>
+		<h2 class="h5">Why this page cannot run commands</h2>
 		<p class="text-sm opacity-80">
-			SOAP runs arbitrary console commands against a live realm, and the management area is
-			currently open to any signed-in user. A command runner will be added once access is decided by
-			the GM level on a linked game account, so the feature cannot be handed out with the gate left
-			open.
+			SOAP runs arbitrary console commands against a live realm, and reading the server's state is a
+			different privilege from changing it. Everything here is read-only and open from gmlevel 2;
+			the command box lives one tier up, at
+			<a class="anchor" href={resolve('/staff/admin')}>Administration</a>, behind gmlevel 3.
 		</p>
 	</section>
 </div>
