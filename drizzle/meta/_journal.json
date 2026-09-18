@@ -15,6 +15,13 @@
       "when": 1789528953321,
       "tag": "0001_awesome_tombstone",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1789746435671,
+      "tag": "0002_quick_jack_murdock",
+      "breakpoints": true
     }
   ]
 }

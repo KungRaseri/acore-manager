@@ -179,6 +179,41 @@ export function requireServerManager(access: Access): void {
 }
 
 /**
+ * Refuses an actor whose own level is below what the realm declares for one
+ * command.
+ *
+ * ## Why the comparison is written this way round
+ *
+ * A level this site could not read is `NaN`, and `NaN < x` is false — written the
+ * other way round, an unreadable command level would let every caller through.
+ * That matters more here than anywhere else in this file: the SOAP credential is
+ * an administrator, so the worldserver runs whatever we send it, and this check
+ * is the enforcement point rather than a restatement of the server's own.
+ *
+ * ## What this deliberately is not
+ *
+ * Not a policy on whether a command is runnable **at all** — that is a property
+ * of the entry, decided by the reader in `$lib/server/acore`, so this file keeps
+ * no dependency on the catalogue's types and learns nothing about 699 commands.
+ * And not a floor on the folder: the folder floor is the *softest* audience of a
+ * tool, while only this per-command check can say no to one specific command.
+ * The parameter is a plain number for the same reason, so the rule can be
+ * exercised without a database.
+ */
+export function requireCommandLevel(access: Access, requiredLevel: number): void {
+	if (access.level >= requiredLevel) {
+		return;
+	}
+
+	error(
+		403,
+		Number.isFinite(requiredLevel)
+			? `This command needs gmlevel ${requiredLevel} on a linked game account.`
+			: 'The realm reported no usable gmlevel for this command, so it is never run from here.'
+	);
+}
+
+/**
  * The game account named by `username`, if it is on this realm **and** belongs to
  * this profile.
  *

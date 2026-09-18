@@ -62,15 +62,22 @@ description: Use when changing the Drizzle schema, generating or applying migrat
 
 1. Edit [`src/lib/server/db/schema.ts`](../../../src/lib/server/db/schema.ts). Consult the MySQL schema-declaration section of `llms/drizzle/llms.txt` for table and column syntax.
 2. If the change involves the auth tables, regenerate them first: `npm run auth:schema`.
-3. Generate a migration: `npm run db:generate`. A schema change without a generated migration fails at
-   runtime, not at build time — the container applies only what is in `drizzle/`.
-4. Apply it: `npm run db:migrate`. While iterating locally, `npm run db:push` syncs the schema directly.
-5. Inspect data or structure with `npm run db:studio`.
+3. **Stop here and hand the CLI to the human.** The repository owner runs `npm run db:generate` (and
+   `db:migrate` / `db:push`) themselves, so an agent must not invoke them: make the schema change and
+   report plainly that a migration is still pending. A schema change without a generated migration
+   fails at runtime, not at build time — the container applies only what is in `drizzle/`.
+4. The human generates `drizzle/NNNN_*.sql` plus `drizzle/meta/*`, then applies it with
+   `npm run db:migrate` (or `db:push` while iterating locally) against a live MySQL.
+5. Inspect data or structure with `npm run db:studio` — again the human's call, since it needs the same
+   live database.
 6. If `DATABASE_URL` errors, confirm it is set in `.env` at the repository root and uses the
    `mysql://user:password@host:port/database` form.
 
 ## Rules
 
+- **Never run the Drizzle CLI yourself.** `db:generate`, `db:migrate`, `db:push` and `db:studio` are
+  the repository owner's commands; an agent edits `schema.ts` and says a migration is pending. Asking
+  wastes a turn — the request is declined by design.
 - Keep the schema driver-agnostic within Drizzle's MySQL module — do not import `mysql2` (or any
   driver) into schema files; the driver belongs to the client.
 - Keep the DB client lazily constructed via `getDb()`; never build it at module scope.

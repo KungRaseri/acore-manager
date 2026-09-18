@@ -1,5 +1,7 @@
 export { executeCommand, getServerInfo, isSoapConfigured } from './soap';
 export type { SoapFailureReason, SoapOptions, SoapResult } from './soap';
+export { findCommand, readCommandCatalogue } from './commands';
+export type { RawCommandRow } from './commands';
 export {
 	SOAP_ACTION,
 	buildExecuteCommandEnvelope,
