@@ -23,10 +23,11 @@ describe('visibleNav', () => {
 		expect(visibleNav(staffNav, 'player')).toEqual([]);
 	});
 
-	it('shows a moderator the staff home and moderation, but not the tiers above', () => {
+	it('shows a moderator the staff home, moderation and the console, but not the tiers above', () => {
 		expect(visibleNav(staffNav, 'moderator').map((item) => item.href)).toEqual([
 			'/staff',
-			'/staff/moderator'
+			'/staff/moderator',
+			'/staff/moderator/commands'
 		]);
 	});
 
@@ -34,12 +35,22 @@ describe('visibleNav', () => {
 		expect(visibleNav(staffNav, 'game-master').map((item) => item.href)).toEqual([
 			'/staff',
 			'/staff/moderator',
+			'/staff/moderator/commands',
 			'/staff/gm'
 		]);
 	});
 
 	it('shows an administrator every section', () => {
 		expect(visibleNav(staffNav, 'administrator')).toHaveLength(staffNav.length);
+	});
+
+	it('keeps the audit trail off both tiers below administrator', () => {
+		const hrefsAt = (tier: Parameters<typeof visibleNav>[1]) =>
+			visibleNav(staffNav, tier).map((item) => item.href);
+
+		expect(hrefsAt('moderator')).not.toContain('/staff/admin/audit');
+		expect(hrefsAt('game-master')).not.toContain('/staff/admin/audit');
+		expect(hrefsAt('administrator')).toContain('/staff/admin/audit');
 	});
 });
 

@@ -3,9 +3,11 @@ import { tierAtLeast, type AccessTier } from '$lib/access';
 import type { Component } from 'svelte';
 import ActivityIcon from '@lucide/svelte/icons/activity';
 import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
+import ScrollTextIcon from '@lucide/svelte/icons/scroll-text';
 import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
 import ShieldIcon from '@lucide/svelte/icons/shield';
 import SwordsIcon from '@lucide/svelte/icons/swords';
+import TerminalIcon from '@lucide/svelte/icons/terminal';
 import WrenchIcon from '@lucide/svelte/icons/wrench';
 
 /**
@@ -68,6 +70,20 @@ export const staffNav: NavItem[] = [
 		label: 'Moderation',
 		href: resolve('/staff/moderator'),
 		icon: ShieldCheckIcon,
+		// Exact, because the command console beneath it is its own entry below:
+		// otherwise this item and that one would light up together.
+		exact: true,
+		minTier: 'moderator'
+	},
+	{
+		/*
+			The console sits in the moderator folder because a command browser's *softest*
+			audience is a moderator. What a visitor may actually run is decided per command,
+			against the level the realm declares and their own GM level, inside the action.
+		*/
+		label: 'Command console',
+		href: resolve('/staff/moderator/commands'),
+		icon: TerminalIcon,
 		minTier: 'moderator'
 	},
 	{
@@ -82,6 +98,17 @@ export const staffNav: NavItem[] = [
 		href: resolve('/staff/admin'),
 		icon: WrenchIcon,
 		exact: true,
+		minTier: 'administrator'
+	},
+	{
+		/*
+			The trail is administrator-only because it aggregates every staff member's
+			attempts, and its rows name accounts, players and reasons. No moderator sees this
+			link, and the route it points at refuses one anyway.
+		*/
+		label: 'Audit trail',
+		href: resolve('/staff/admin/audit'),
+		icon: ScrollTextIcon,
 		minTier: 'administrator'
 	}
 ];

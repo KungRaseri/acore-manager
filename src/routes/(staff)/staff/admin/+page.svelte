@@ -18,13 +18,21 @@
 	>
 		<div class="flex items-center gap-3">
 			<WrenchIcon class="size-6 text-primary-500" />
-			<h2 class="h5">The command box lands here</h2>
+			<h2 class="h5">What is open at this level</h2>
 		</div>
 
 		<p class="text-sm opacity-80">
-			Running console commands is the only thing on this site that changes a live realm, which is
-			why it waits until the gate exists: this route, gmlevel 3, with the action re-checking for
-			itself before anything reaches SOAP.
+			The <a class="anchor" href={resolve('/staff/admin/audit')}>audit trail</a> is here: every console
+			command attempt the site has recorded, newest first, with the actor, the arguments and the console's
+			own reply. It is administrator-only because it aggregates every staff member's attempts, and it
+			is read-only — no page edits, deletes, prunes or exports a row.
+		</p>
+
+		<p class="text-sm opacity-80">
+			Running the commands is not here. The box lives at
+			<a class="anchor" href={resolve('/staff/moderator/commands')}>Command console</a>, open from
+			gmlevel 1, because a command browser's softest audience is a moderator — and what a visitor
+			may run there is decided per command, in the action that sends it.
 		</p>
 
 		<p class="text-sm opacity-80">
@@ -45,7 +53,10 @@
 		<ul class="flex list-disc flex-col gap-1 pl-5 text-sm opacity-80">
 			<li><code>SOAP.Enabled = 1</code> in <code>worldserver.conf</code>.</li>
 			<li>The console account holds <code>SEC_ADMINISTRATOR</code>.</li>
-			<li>Commands are logged, and the page says so before anyone runs one.</li>
+			<li>
+				Commands are logged: the trail records the intent before anything is sent and the outcome
+				after, and a refusal is recorded too.
+			</li>
 		</ul>
 	</section>
 </div>

@@ -75,9 +75,11 @@
 		<h2 class="h5">Why this page cannot run commands</h2>
 		<p class="text-sm opacity-80">
 			SOAP runs arbitrary console commands against a live realm, and reading the server's state is a
-			different privilege from changing it. Everything here is read-only and open from gmlevel 2;
-			the command box lives one tier up, at
-			<a class="anchor" href={resolve('/staff/admin')}>Administration</a>, behind gmlevel 3.
+			different privilege from changing it. Everything here is read-only and open from gmlevel 2.
+			The command box lives at
+			<a class="anchor" href={resolve('/staff/moderator/commands')}>Command console</a>, open from
+			gmlevel 1 — which commands you may run there is decided per command, against the level the
+			realm declares and your own linked accounts, by the action that sends it.
 		</p>
 	</section>
 </div>
