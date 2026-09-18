@@ -2,11 +2,12 @@
 
 A server and player management website for AzerothCore (World of Warcraft 3.3.5a) servers.
 
-> **Status: sign-in, game accounts, characters and tiered staff access all work.** Discord sign-in, the
-> database bootstrap, the container build, account creation and linking, the AzerothCore GM-level gate
-> behind `/staff`, and read-only character browsing — an account's characters, their equipment and skills,
-> and the characters the account has deleted — are in place. Bans, live operations and anything that
-> changes a realm are not — see [Roadmap](#roadmap).
+> **Status: sign-in, game accounts, characters, tiered staff access and the GM command console all work.**
+> Discord sign-in, the database bootstrap, the container build, account creation and linking, the
+> AzerothCore GM-level gate behind `/staff`, read-only character browsing — an account's characters, their
+> equipment and skills, and the characters the account has deleted — and the command console at
+> `/staff/moderator/commands` with its audit trail are in place. Bans and mutes as first-class tools, a
+> staff-facing view of a player, and the rest of the live-operations domain are not — see [Roadmap](#roadmap).
 
 ## Stack
 
@@ -173,6 +174,8 @@ The same two commands work outside Docker — that is exactly what the container
    and what it lets you do.
 3. **Characters** — _done, read-only_: `/accounts/[username]` lists an account's characters and the ones it
    has deleted, and each character opens to its equipment and skills.
-4. **Bans, live operations, and anything that acts** — the rest of the management domain. Every action that
-   changes a realm (`unstuck`, rename, console commands) needs an audit trail before it can exist, so this
-   stays open deliberately.
+4. **Bans, live operations, and anything that acts** — _console done, the rest open_: `/staff/moderator/commands`
+   runs the commands the realm itself declares, and every attempt is recorded in the audit trail at
+   `/staff/admin/audit`. What remains is the rest of the management domain — bans and mutes as first-class
+   tools, a staff-facing view of a player, and actions such as unstuck or rename. Every action that changes
+   a realm needs an audit trail before it can exist, so this stays open deliberately.

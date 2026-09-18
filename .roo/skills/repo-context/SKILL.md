@@ -35,11 +35,15 @@ description: Use when starting any work in this repository or when you need to o
 - `src/routes/` — routes in three **groups**: `(public)` (`/`, `/login`), `(authenticated)`
   (`/dashboard`, `/accounts`), `(staff)` (`/staff`). The parentheses keep the folder out of the URL, and
   each group's layout enforces that group's rule. The staff area is tiered by folder name:
-  `/staff/moderator`, `/staff/gm` and `/staff/admin` each state their floor, and each declares it on its
-  own layout.
+  `/staff/moderator`, `/staff/gm` and `/staff/admin` each state their floor on their own layout, and a
+  nested folder with a page does the same — `/staff/moderator/commands` (floor 1) and
+  `/staff/admin/audit` (floor 3).
 - `src/lib/server/` — **server-only** code: `auth.ts` (Better Auth), `authz.ts` (access rules), `db/`
-  (Drizzle client + schema, AzerothCore pools), `acore/` (SOAP console client + protocol helpers).
-- `src/lib/components/site/` — site chrome; `src/lib/auth-client.ts` — browser-side Better Auth client.
+  (Drizzle client + schema, AzerothCore pools), `acore/` (SOAP console client, protocol helpers, and the
+  catalogue read from `acore_world.command`), `commands/` (the audited console runner and the console-line
+  argument rules).
+- `src/lib/components/site/` — site chrome; `src/lib/components/commands/` and
+  `src/lib/components/characters/` — feature UI; `src/lib/auth-client.ts` — browser-side Better Auth client.
 - `src/routes/layout.css` — the Tailwind 4 + Skeleton entry point; `src/themes/azeroth.css` — the
   project theme. There is **no `tailwind.config.js`** (Tailwind 4 is CSS-first).
 - `src/hooks.server.ts` — SvelteKit server hooks; `src/app.d.ts` — ambient types; `src/app.html` — the
@@ -50,16 +54,19 @@ description: Use when starting any work in this repository or when you need to o
   Better Auth, Vite 7, Vitest 3 (`client` jsdom + `server` node projects), Playwright (e2e).
 - Commands: `dev`, `build`, `preview`, `check` (the type gate), `lint`, `format`, `test:unit`
   (**watch mode** — pass `-- --run`), `test`, `test:e2e`, `db:push|generate|migrate|studio`, `auth:schema`.
-- **Status: game accounts work end to end; management features are next.** Sign-in, the theme, the app
-  shell and the route groups work, `/accounts` creates and links game accounts, and the scaffold
-  placeholders (`src/routes/demo/**`, `src/lib/vitest-examples/**`) are gone.
+- **Status: the features the site ships work end to end.** Sign-in, the theme, the app shell and the route
+  groups work, `/accounts` creates and links game accounts, characters are readable, and the GM command
+  console at `/staff/moderator/commands` runs the realm's own commands with every attempt written to the
+  audit trail at `/staff/admin/audit`. The scaffold placeholders (`src/routes/demo/**`,
+  `src/lib/vitest-examples/**`) are gone.
 - **Authorization is real and tiered.** `src/lib/server/authz.ts` resolves the profile's GM level from
   `acore_auth.account_access` across its linked game accounts, and the `/staff` folder layouts enforce
   their floors. The level is read per request and never cached, and a level that cannot be read means a
   player.
-- **AzerothCore integration has started but is thin** — a server-only SOAP console client, lazy `mysql2`
-  pools for `acore_auth` / `acore_world` / `acore_characters`, and the read-only GM-level query. Account
-  provisioning is done; characters, bans and live operations are not.
+- **AzerothCore integration is server-only and rule-governed** — the SOAP console client, lazy `mysql2`
+  pools for `acore_auth` / `acore_world` / `acore_characters`, the read-only GM-level query, and the
+  `acore_world.command` catalogue behind the console. Provisioning, character reads and audited console runs
+  are done; bans, mutes and the rest of the live-operations domain are not.
 
 ## Steps
 

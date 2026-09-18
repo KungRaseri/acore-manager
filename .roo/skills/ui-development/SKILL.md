@@ -96,8 +96,9 @@ The design system **is** wired, and the project theme is `azeroth`.
 3. Read the relevant section of `llms/skeletondev/llms-full.txt` or `llms/bitsui/llms-full.txt`
    **before writing markup** — do not guess component APIs.
 4. Build with Skeleton tokens, presets and Tailwind utilities only.
-5. Place components by area: `src/lib/components/site/*` for site chrome, `src/lib/components/ui/*`
-   for shared atoms. Add a feature-area folder when the management domain is defined.
+5. Place components by area: `src/lib/components/site/*` for site chrome, and one folder per feature —
+   `characters/` and `commands/` exist today. There is no `ui/` folder for shared atoms yet; add one when
+   something is genuinely shared rather than feature-specific.
 6. Verify once at the end of the session (see `verification`).
 
 ## Rules
@@ -115,7 +116,10 @@ The design system **is** wired, and the project theme is `azeroth`.
   for Bits UI.
 - Components must not mutate server state directly; they read what a load provided and submit actions
   or requests instead.
-- Client components must never import `$lib/server/**`. If a component needs an authorization fact,
-  compute it in `+layout.server.ts` and pass it as data (see `showAdminNav`).
+- Client components must never import `$lib/server/**` — not even for a type. If a component needs an
+  authorization fact or a row shape, get it where the component can see it: the staff layouts pass the
+  resolved `access` down as data, and [`CommandOutput.svelte`](../../../src/lib/components/commands/CommandOutput.svelte)
+  and [`AuditTable.svelte`](../../../src/lib/components/commands/AuditTable.svelte) declare the props they
+  render rather than importing the route's server-only interfaces.
 - Do not copy UI conventions from the project this scaffold was copied from — verify a component,
   token or theme exists in **this** project first.

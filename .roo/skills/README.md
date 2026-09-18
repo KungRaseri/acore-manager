@@ -25,9 +25,10 @@ See [`_template/SKILL.md`](_template/SKILL.md). Every skill uses the same struct
 
 ## Notes
 
-- **No AzerothCore integration skill exists yet, on purpose.** The integration layer is deferred; add
-  a skill for it when that work starts, documenting the integration surfaces and their security rules
-  before any code is written.
+- **There is no AzerothCore-integration skill, and none is needed yet.** The layer exists — the SOAP console
+  client, the `acore_world.command` catalogue, the audited console runner — and its rules live in
+  [`AGENTS.md`](../../AGENTS.md) → AzerothCore integration and GM command console & audit trail. Add a skill
+  when that work outgrows those two sections.
 - Skills describe **this** project. If a skill references a path, a package or a concept that does not
   exist here, treat it as a bug and fix it — this repository was scaffolded from another project and
   inherited documentation that did not always match reality.

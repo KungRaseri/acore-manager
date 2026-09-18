@@ -8,45 +8,52 @@ acore-manager is a **server and player management website for AzerothCore** (Wor
 
 - Application code lives in [`src/`](src) (routes under [`src/routes/`](src/routes), server-only code under [`src/lib/server/`](src/lib/server)).
 - Reusable **agent skills** live in [`.roo/skills/`](.roo/skills) and their third-party `llms.txt` reference corpus in [`llms/`](llms) — see [Skills & reference material](#skills--reference-material).
-- **Status: auth, database and UI plumbing are in place.** The app builds and deploys (see [Deployment](#deployment)); Discord sign-in, the database bootstrap, the Skeleton theme and the `(public)` / `(authenticated)` / `(admin)` route groups all work. Authorization is a documented placeholder, and the AzerothCore integration reaches as far as the SOAP console client — see [Known issues](#known-issues).
-- **The AzerothCore integration layer has started, and only the SOAP client exists.** [`src/lib/server/acore/`](src/lib/server/acore) holds a server-only SOAP console client (`executeCommand`, `getServerInfo`) and its protocol helpers — no account provisioning, no character or ban queries. Read [AzerothCore integration](#azerothcore-integration) for the rules that already apply, then [Roadmap](#roadmap), before extending it.
+- **Status: everything the site ships works end to end.** The app builds and deploys (see [Deployment](#deployment)); Discord sign-in, the database bootstrap, the Skeleton theme and the `(public)` / `(authenticated)` / `(staff)` route groups all work. Authorization is tiered from the GM level on a profile's linked game accounts, game accounts can be created and linked, characters are readable, and the **GM command console** browses and runs what the realm declares — with every attempt written to an audit trail — see [Known issues](#known-issues).
+- **The AzerothCore integration layer is server-only and has three surfaces.** [`src/lib/server/acore/`](src/lib/server/acore) holds the SOAP console client (`executeCommand`, `getServerInfo`) and its protocol helpers, and the command catalogue read from `acore_world.command`; [`src/lib/server/db/acore.ts`](src/lib/server/db/acore.ts) hands out the plain `mysql2` pools. What the console may run is decided by [`src/lib/gm-commands.ts`](src/lib/gm-commands.ts) and recorded by [`src/lib/server/commands/`](src/lib/server/commands). Read [AzerothCore integration](#azerothcore-integration) and [GM command console & audit trail](#gm-command-console--audit-trail) for the rules that apply, then [Roadmap](#roadmap), before extending it.
 
 ## Repository layout
 
-| Path                                                                   | Role                                                                                       |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| [`src/routes/`](src/routes)                                            | SvelteKit routes, grouped into `(public)`, `(authenticated)` and `(staff)`                 |
-| [`src/routes/layout.css`](src/routes/layout.css)                       | Tailwind 4 entry point; also the stylesheet Prettier uses for Tailwind class sorting       |
-| [`src/hooks.server.ts`](src/hooks.server.ts)                           | SvelteKit server hooks                                                                     |
-| [`src/app.html`](src/app.html)                                         | HTML shell; where a Skeleton `data-theme` attribute belongs                                |
-| [`src/app.d.ts`](src/app.d.ts)                                         | SvelteKit ambient types (`App.Locals`, …)                                                  |
-| [`src/lib/server/auth.ts`](src/lib/server/auth.ts)                     | Better Auth instance — `getAuth()`, server-only, built lazily                              |
-| [`src/lib/server/db/index.ts`](src/lib/server/db/index.ts)             | Drizzle client — `getDb()`, built lazily                                                   |
-| [`src/routes/(public)/login/`](<src/routes/(public)/login>)            | Discord sign-in route                                                                      |
-| [`src/lib/server/db/schema.ts`](src/lib/server/db/schema.ts)           | **Schema source of truth**                                                                 |
-| [`src/lib/server/db/auth.schema.ts`](src/lib/server/db/auth.schema.ts) | **Generated** Better Auth tables — never hand-edit                                         |
-| [`src/lib/assets/`](src/lib/assets)                                    | Assets imported by components                                                              |
-| [`static/`](static)                                                    | Served as-is from the site root; holds the extracted item icons (git-ignored)              |
-| [`src/themes/azeroth.css`](src/themes/azeroth.css)                     | The project's Skeleton theme — design tokens for `data-theme="azeroth"`                    |
-| [`src/lib/components/site/`](src/lib/components/site)                  | Site chrome: app shell, navigation, user menu, mode toggle                                 |
-| [`src/lib/components/characters/`](src/lib/components/characters)      | Character pages: the item icon with its placeholder fallback                               |
-| [`src/lib/navigation.ts`](src/lib/navigation.ts)                       | Navigation data and the active-item rule                                                   |
-| [`src/lib/user.ts`](src/lib/user.ts)                                   | `CurrentUser` — the user shape the UI is allowed to see                                    |
-| [`src/lib/auth-client.ts`](src/lib/auth-client.ts)                     | Browser-side Better Auth client (sign-out; later account linking)                          |
-| [`src/lib/server/authz.ts`](src/lib/server/authz.ts)                   | Authorization — the one place that answers "may this user do this?"                        |
-| [`src/lib/access.ts`](src/lib/access.ts)                               | The tier vocabulary — `SEC_*` constants and the level-to-tier mapping                      |
-| [`src/lib/server/acore/access.ts`](src/lib/server/acore/access.ts)     | GM levels read from `acore_auth.account_access`, one query, read-only                      |
-| [`src/lib/server/accounts/`](src/lib/server/accounts)                  | Game accounts — console provisioning, SRP6 credential check, linking, ownership            |
-| [`src/lib/server/characters/`](src/lib/server/characters)              | Characters — reads on `acore_characters`, names and items from `acore_world`               |
-| [`src/lib/characters.ts`](src/lib/characters.ts)                       | Character vocabulary — money, playtime, timestamps, quality, slot labels, icon URLs        |
-| [`.roo/skills/`](.roo/skills)                                          | Reusable agent skills; catalog in [`.roo/skills/README.md`](.roo/skills/README.md)         |
-| [`llms/`](llms)                                                        | Third-party `llms.txt` reference corpora; provenance in [`llms/README.md`](llms/README.md) |
-| [`.github/workflows/`](.github/workflows)                              | CI                                                                                         |
-| [`drizzle.config.ts`](drizzle.config.ts)                               | Drizzle Kit config (schema path, MySQL dialect)                                            |
-| [`migrate.mjs`](migrate.mjs)                                           | Runtime bootstrap: creates the database if missing, then applies migrations                |
-| [`docker-entrypoint.sh`](docker-entrypoint.sh)                         | Container entrypoint: runs `migrate.mjs`, then starts the built server                     |
-| [`Dockerfile`](Dockerfile)                                             | Two-stage image build (adapter-node output plus the migration tooling)                     |
-| [`.dockerignore`](.dockerignore)                                       | Keeps `.env`, `node_modules` and VCS metadata out of image layers                          |
+| Path                                                                                            | Role                                                                                       |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [`src/routes/`](src/routes)                                                                     | SvelteKit routes, grouped into `(public)`, `(authenticated)` and `(staff)`                 |
+| [`src/routes/layout.css`](src/routes/layout.css)                                                | Tailwind 4 entry point; also the stylesheet Prettier uses for Tailwind class sorting       |
+| [`src/hooks.server.ts`](src/hooks.server.ts)                                                    | SvelteKit server hooks                                                                     |
+| [`src/app.html`](src/app.html)                                                                  | HTML shell; where a Skeleton `data-theme` attribute belongs                                |
+| [`src/app.d.ts`](src/app.d.ts)                                                                  | SvelteKit ambient types (`App.Locals`, …)                                                  |
+| [`src/lib/server/auth.ts`](src/lib/server/auth.ts)                                              | Better Auth instance — `getAuth()`, server-only, built lazily                              |
+| [`src/lib/server/db/index.ts`](src/lib/server/db/index.ts)                                      | Drizzle client — `getDb()`, built lazily                                                   |
+| [`src/routes/(public)/login/`](<src/routes/(public)/login>)                                     | Discord sign-in route                                                                      |
+| [`src/routes/(staff)/staff/moderator/commands/`](<src/routes/(staff)/staff/moderator/commands>) | GM command console — browse the realm's commands, run the ones this level may run          |
+| [`src/routes/(staff)/staff/admin/audit/`](<src/routes/(staff)/staff/admin/audit>)               | Audit trail — one page of console attempts, newest first, read-only                        |
+| [`src/lib/server/db/schema.ts`](src/lib/server/db/schema.ts)                                    | **Schema source of truth**                                                                 |
+| [`src/lib/server/db/auth.schema.ts`](src/lib/server/db/auth.schema.ts)                          | **Generated** Better Auth tables — never hand-edit                                         |
+| [`src/lib/assets/`](src/lib/assets)                                                             | Assets imported by components                                                              |
+| [`static/`](static)                                                                             | Served as-is from the site root; holds the extracted item icons (git-ignored)              |
+| [`src/themes/azeroth.css`](src/themes/azeroth.css)                                              | The project's Skeleton theme — design tokens for `data-theme="azeroth"`                    |
+| [`src/lib/components/site/`](src/lib/components/site)                                           | Site chrome: app shell, navigation, user menu, mode toggle                                 |
+| [`src/lib/components/characters/`](src/lib/components/characters)                               | Character pages: the item icon with its placeholder fallback                               |
+| [`src/lib/components/commands/`](src/lib/components/commands)                                   | Console and trail UI — command browser, row, runner, output, audit table                   |
+| [`src/lib/navigation.ts`](src/lib/navigation.ts)                                                | Navigation data and the active-item rule                                                   |
+| [`src/lib/user.ts`](src/lib/user.ts)                                                            | `CurrentUser` — the user shape the UI is allowed to see                                    |
+| [`src/lib/auth-client.ts`](src/lib/auth-client.ts)                                              | Browser-side Better Auth client (sign-out; later account linking)                          |
+| [`src/lib/server/authz.ts`](src/lib/server/authz.ts)                                            | Authorization — the one place that answers "may this user do this?"                        |
+| [`src/lib/access.ts`](src/lib/access.ts)                                                        | The tier vocabulary — `SEC_*` constants and the level-to-tier mapping                      |
+| [`src/lib/server/acore/access.ts`](src/lib/server/acore/access.ts)                              | GM levels read from `acore_auth.account_access`, one query, read-only                      |
+| [`src/lib/server/acore/commands.ts`](src/lib/server/acore/commands.ts)                          | GM command catalogue — one read-only `SELECT` on `acore_world.command`                     |
+| [`src/lib/server/accounts/`](src/lib/server/accounts)                                           | Game accounts — console provisioning, SRP6 credential check, linking, ownership            |
+| [`src/lib/server/characters/`](src/lib/server/characters)                                       | Characters — reads on `acore_characters`, names and items from `acore_world`               |
+| [`src/lib/server/commands/`](src/lib/server/commands)                                           | The audited command runner (`audit.ts`) and the console-line argument rules (`rules.ts`)   |
+| [`src/lib/characters.ts`](src/lib/characters.ts)                                                | Character vocabulary — money, playtime, timestamps, quality, slot labels, icon URLs        |
+| [`src/lib/gm-commands.ts`](src/lib/gm-commands.ts)                                              | GM command vocabulary and the restrict-only policy overlay — client-safe                   |
+| [`.roo/skills/`](.roo/skills)                                                                   | Reusable agent skills; catalog in [`.roo/skills/README.md`](.roo/skills/README.md)         |
+| [`llms/`](llms)                                                                                 | Third-party `llms.txt` reference corpora; provenance in [`llms/README.md`](llms/README.md) |
+| [`.github/workflows/`](.github/workflows)                                                       | CI                                                                                         |
+| [`drizzle.config.ts`](drizzle.config.ts)                                                        | Drizzle Kit config (schema path, MySQL dialect)                                            |
+| [`migrate.mjs`](migrate.mjs)                                                                    | Runtime bootstrap: creates the database if missing, then applies migrations                |
+| [`docker-entrypoint.sh`](docker-entrypoint.sh)                                                  | Container entrypoint: runs `migrate.mjs`, then starts the built server                     |
+| [`Dockerfile`](Dockerfile)                                                                      | Two-stage image build (adapter-node output plus the migration tooling)                     |
+| [`.dockerignore`](.dockerignore)                                                                | Keeps `.env`, `node_modules` and VCS metadata out of image layers                          |
+| [`drizzle/`](drizzle)                                                                           | Generated migrations; `0002_quick_jack_murdock.sql` adds `command_audit`                   |
 
 ## Skills & reference material
 
@@ -138,11 +145,11 @@ copy .env.example .env     # Windows (cp .env.example .env elsewhere)
 
 Routes are grouped, and the group layout carries the rule:
 
-| Group                        | URLs                      | Layout does                                                                                                  |
-| ---------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `src/routes/(public)`        | `/`, `/login`             | Public chrome (header + footer); serves anonymous visitors                                                   |
-| `src/routes/(authenticated)` | `/dashboard`, `/accounts` | `requireUser()` — redirects to `/login?redirectTo=…` when signed out                                         |
-| `src/routes/(staff)`         | `/staff`, `/staff/**`     | `requireUser()` then `requireStaff()` — 403 below gmlevel 1; folders beneath carry their own, stricter floor |
+| Group                        | URLs                                                                                     | Layout does                                                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `src/routes/(public)`        | `/`, `/login`                                                                            | Public chrome (header + footer); serves anonymous visitors                                                   |
+| `src/routes/(authenticated)` | `/dashboard`, `/accounts`                                                                | `requireUser()` — redirects to `/login?redirectTo=…` when signed out                                         |
+| `src/routes/(staff)`         | `/staff`, `/staff/**` (nested floors: `/staff/moderator/commands`, `/staff/admin/audit`) | `requireUser()` then `requireStaff()` — 403 below gmlevel 1; folders beneath carry their own, stricter floor |
 
 - Parentheses mean the folder **does not appear in the URL**: `(public)/login` serves `/login`.
 - Two groups cannot both own `/`.
@@ -155,12 +162,14 @@ Routes are grouped, and the group layout carries the rule:
 
 Access is the GM level on the game accounts linked to a profile, read from `acore_auth.account_access`:
 
-| Route              | Floor                                                      |
-| ------------------ | ---------------------------------------------------------- |
-| `/staff`           | `SEC_MODERATOR` (1) and up — the staff dashboard           |
-| `/staff/moderator` | `SEC_MODERATOR` (1) and up — moderation tools              |
-| `/staff/gm`        | `SEC_GAMEMASTER` (2) and up — read-only diagnostics        |
-| `/staff/admin`     | `SEC_ADMINISTRATOR` (3) and up — what can act on the realm |
+| Route                       | Floor                                                                                    |
+| --------------------------- | ---------------------------------------------------------------------------------------- |
+| `/staff`                    | `SEC_MODERATOR` (1) and up — the staff dashboard                                         |
+| `/staff/moderator`          | `SEC_MODERATOR` (1) and up — moderation tools                                            |
+| `/staff/gm`                 | `SEC_GAMEMASTER` (2) and up — read-only diagnostics                                      |
+| `/staff/admin`              | `SEC_ADMINISTRATOR` (3) and up — what can act on the realm                               |
+| `/staff/moderator/commands` | `SEC_MODERATOR` (1) and up — the command console: browse the realm's commands            |
+| `/staff/admin/audit`        | `SEC_ADMINISTRATOR` (3) and up — the audit trail: every attempt, newest first, read-only |
 
 - **The folder name is the floor, and that is part of the contract.** A tool lives in the folder matching its _softest_ audience, and a leaf may be stricter than its folder but never laxer. [`src/lib/server/staff-routes.spec.ts`](src/lib/server/staff-routes.spec.ts) walks the route tree and fails the build when a folder with a page does not declare a floor at or above the one its name implies — because the group layout carries the _weakest_ rule, a folder with no layout would otherwise inherit it silently.
 - The ladder as vocabulary is [`src/lib/access.ts`](src/lib/access.ts), deliberately client-safe so the nav and the layouts name the same tiers. The query is [`src/lib/server/acore/access.ts`](src/lib/server/acore/access.ts), read-only and indexed, `MAX(gmlevel)` across the profile's linked accounts.
@@ -169,13 +178,16 @@ Access is the GM level on the game accounts linked to a profile, read from `acor
 - **It fails closed.** A level that cannot be read — AzerothCore unreachable, `ACORE_DATABASE_URL` unset — means `player`, logged, never a 500 and never staff access.
 - A profile with no linked game account has no level and sees no staff page; linking one on the accounts page is the prerequisite.
 - **Ownership is a different question from the tier**, and it has its own helper. `requireOwnedAccount()` answers "is _this_ game account this visitor's?" for the account whose page is being opened. An account belongs to a profile when a `game_account` row links it, or when `account.email` is the profile's Discord address — the same rule the accounts page lists by, defined once in [`ownership.ts`](src/lib/server/accounts/ownership.ts) so the page and the URL behind it can never disagree. It answers 404 for "not yours" and "not there" alike, so it cannot be used to work out which names exist.
+- **A route's floor is not a command's floor.** The console sits in the `moderator` folder because a command browser's _softest_ audience is a moderator, but what a visitor may actually _run_ is decided per command, in that folder's own action: `requireCommandLevel()` in [`authz.ts`](src/lib/server/authz.ts) compares the visitor's own level with the `security` the realm declares for that command. A tier-1 route therefore hosts commands the realm declares at 2 or 3 — they are listed and disabled with the realm's number shown, so the page can explain "needs gmlevel 3" rather than hide it, and a forged POST is refused, audited and never sent.
+- **A nested folder states its own floor, and names exactly one floor helper.** [`staff-routes.spec.ts`](src/lib/server/staff-routes.spec.ts) finds that declaration by searching the layout's text — comments included — and counts only the three helpers it knows (`requireStaff`, `requireGameMaster`, `requireServerManager`), so naming two of _those_ anywhere in the file, even in prose, fails the build. `/staff/moderator/commands` declares `requireStaff`; `/staff/admin/audit` declares `requireServerManager`.
 
 ## AzerothCore integration
 
-The integration layer is server-only, lives in [`src/lib/server/acore/`](src/lib/server/acore), and is reached through two entry points:
+The integration layer is server-only, lives in [`src/lib/server/acore/`](src/lib/server/acore), and is reached through three entry points:
 
 - **Databases** — [`src/lib/server/db/acore.ts`](src/lib/server/db/acore.ts) hands out plain `mysql2` pools (`getAcoreAuthDb()`, `getAcoreWorldDb()`, `getAcoreCharactersDb()`, `getAcoreDb()`). One `ACORE_DATABASE_URL` (server and credentials only) is shared; the database name is the only difference. Never declare these tables in Drizzle and never point `drizzle-kit` at them.
 - **Console** — [`src/lib/server/acore/soap.ts`](src/lib/server/acore/soap.ts) runs worldserver console commands over SOAP. It is an administrator credential with arbitrary command execution behind it, so: calls are serialised one at a time (the worldserver serves SOAP on a single thread), every call has a timeout (there is no server-side one), and nothing may import it from client-side code. `SOAP.Enabled = 1` and `SEC_ADMINISTRATOR` are prerequisites; both are documented in [`.env.example`](.env.example).
+- **Command catalogue** — [`src/lib/server/acore/commands.ts`](src/lib/server/acore/commands.ts) reads the realm's own `acore_world.command` table with one read-only `SELECT` on `getAcoreWorldDb()` and maps each row to a [`GmCommand`](src/lib/gm-commands.ts). The realm's `security` column is the authority for what a command demands — the core adopts it at boot, so a gate built on it matches what the realm asks of an in-game caller — and this site keeps no security number of its own. Nothing is cached, and there is no fallback to a committed list. See [GM command console & audit trail](#gm-command-console--audit-trail).
 
 ## Game accounts
 
@@ -240,7 +252,8 @@ Characters are **read-only**, from `acore_characters` in
   and `account`. The list therefore filters on `deleteInfos_Account` and reads the name back — a query
   against `account` returns nothing at all, which is the kind of bug that looks like an empty list.
 - **Nothing on those pages acts.** No console command and no write: changing a character is deliberately
-  not built yet, and whatever does act will need an audit trail first.
+  not built yet. The audit trail such an action would have to write to exists now (see
+  [GM command console & audit trail](#gm-command-console--audit-trail)); the action itself does not.
 - **Item icons are the one thing not in a database.** `itemdisplayinfo_dbc` gives the icon's _name_, but the
   image is a texture inside the client's MPQ archives, so the extracted files live in
   `static/interface/Icons` and are served from this site — a player's browser fetches item icons here and
@@ -262,13 +275,112 @@ Characters are **read-only**, from `acore_characters` in
   separates professions from weapon and language skills. Ordering by value puts trained professions first; a
   curated split would need a verified list of profession ids.
 
+## GM command console & audit trail
+
+The console at [`/staff/moderator/commands`](<src/routes/(staff)/staff/moderator/commands>) lists every command
+the realm declares and runs the ones the acting profile may run; [`/staff/admin/audit`](<src/routes/(staff)/staff/admin/audit>)
+shows every attempt, newest first. Three modules carry it:
+
+- **Catalogue** — [`src/lib/server/acore/commands.ts`](src/lib/server/acore/commands.ts): one read-only `SELECT` on
+  `acore_world.command`, mapped by the pure `toCommandEntry()`. `readCommandCatalogue()` returns
+  `{ entries, available }`, and `findCommand()` looks one up by name for the action.
+- **Vocabulary and policy** — [`src/lib/gm-commands.ts`](src/lib/gm-commands.ts), client-safe: the `GmCommand` shape,
+  `parseHelp()`, `groupOf()`, `tierForCommandLevel()`, `isRunnable()`, `requiresConfirmation()`, `noteFor()`, the risk
+  vocabulary and the curated deny list, plus `MAX_AUDIT_OUTPUT_CHARS` (2000) and `MAX_COMMAND_ARGUMENTS` (200).
+- **Execution** — [`src/lib/server/commands/`](src/lib/server/commands): the audited runner
+  ([`audit.ts`](src/lib/server/commands/audit.ts)) and the console-line rules ([`rules.ts`](src/lib/server/commands/rules.ts)).
+  The `run` action in [`.../commands/+page.server.ts`](<src/routes/(staff)/staff/moderator/commands/+page.server.ts>)
+  holds the checks and calls the runner; nothing else sends a command.
+
+**The catalogue is the realm's own `acore_world.command` table, never a list kept here.** The table's `security`
+column is authoritative because the core adopts it as each command's required level at boot, so a gate built on
+the realm's number matches what the realm asks of an in-game caller, and a realm that has retuned a command is
+respected rather than contradicted. This site keeps **no per-command security number** and has **no fallback
+list**. Nothing is cached: the table is read afresh on every request, the rule the GM level and the character
+reference tables already follow. The query needs one grant — `SELECT` on `acore_world.command` — listed in
+[`.env.example`](.env.example) with the other narrow reads.
+
+**What is runnable, and what is only listed.** `isRunnable()` accepts a command whose `security` is 1–3 when the
+overlay does not block it. Level 0 is excluded outright, because through this site's console credential those
+player self-service commands would act on the console account rather than on the caller. Level 4 is **listed and
+never runnable**: the site's ladder stops at `administrator`, so `tierForCommandLevel()` returns `null` above it
+rather than clamping to the top tier and claiming the site can run it. The overlay is **restrict-only by
+construction** — it can block a command or demand a typed confirmation, and an unclassified command is
+`mutating`, never `read-only` — so it can never declare runnable something the realm gates more strictly.
+
+**When the table cannot be read, everything closes.** An unreadable table (`ACORE_DATABASE_URL` unset, MySQL
+down, no `SELECT` grant) makes the catalogue _unavailable_: nothing is listed, nothing is runnable, no fallback
+stands in for the realm, and the failure is logged on every occurrence. A table that reads but holds no usable
+row shows the same empty console and is logged **once per process**, because an empty table is a property of that
+realm — AzerothCore ships it in `data/sql/base/db_world/command.sql`, and this project never writes into
+`acore_world`. A command the core knows but the table does not is absent from the catalogue and therefore not
+runnable: the name **is** the whitelist, and it fails closed.
+
+### Execution, and the rule that makes it safe
+
+The `run` action re-checks everything, in this order, because a layout does not cover an action:
+
+1. `getAccess(locals)`, then `requireStaff()`. The site's SOAP credential is an administrator, so without this
+   line any POST would spend it whatever tier the sender had.
+2. Read the catalogue and look the submitted **name** up; not found ⇒ 404. The submitted value is a lookup key,
+   never a fragment of a console line — the line is built from the catalogue's own name.
+3. Not `runnable` (level 0, above the ladder, or blocked) ⇒ a `refused` audit row, then 403 carrying the entry's
+   own note.
+4. `requireCommandLevel(access, entry.security)` ⇒ refusal recorded, then 403.
+5. `validateCommandArguments()` and the typed confirmation, both validated **on the server** whatever the form
+   did: a control character, a value over `MAX_COMMAND_ARGUMENTS`, or arguments for a command whose syntax
+   declares none is refused, and a forged POST that omits the confirmation is refused _and recorded_.
+6. `runAuditedCommand()` — the only thing that sends anything.
+
+**The trail is written in two phases, and no transaction spans the SOAP call.** The intent row
+(`status = 'pending'`) is inserted _before_ anything reaches the worldserver; the outcome (`success` or `failed`,
+with `failure_reason`, `message`, `output`, `duration_ms` and `finished_at`) updates that same row afterwards.
+`executeCommand()` returns a result rather than throwing, so success and failure take one uniform path and a
+failed execution is recorded exactly like a successful one. Holding a MySQL transaction open across a call that
+can run for the client's ten-second timeout would pin a pool connection and hold locks to protect nothing.
+
+- **No trail, no action.** If the intent insert fails, nothing is sent, and the operator is told the trail is
+  unavailable (503). An action with no record is worse than an action that did not happen.
+- **The outcome write can fail after the command has already run.** There is no undo, so the whole outcome goes to
+  the log — the log becomes the fallback record — and the page says the command ran and could not be recorded
+  rather than showing an unqualified success.
+- **A refusal is its own row**, written before the 403 leaves, because a moderator posting a command above their
+  level is exactly the event worth having in the record. Unlike a run, refusing does not depend on the trail being
+  writable.
+- **A `pending` row with no `finished_at` means the process died** between sending the command and recording the
+  outcome. The trail renders it as that: not a failure, and not evidence that nothing happened.
+
+### `command_audit`
+
+Declared in [`schema.ts`](src/lib/server/db/schema.ts), migrated by
+[`0002_quick_jack_murdock.sql`](drizzle/0002_quick_jack_murdock.sql).
+
+- **`user_id` has no foreign key to `user`, deliberately.** A cascade would erase the history of a deleted
+  profile — the opposite of what an audit trail is for — so the column is a plain indexed id, and `actor_name`
+  and `actor_level` are denormalised so a row survives a rename or a deletion. Do not "fix" this.
+- **Append-only, with no retention tooling.** One row per execution is negligible at private-realm staff volumes,
+  the app has no scheduler in which a prune could run, and nothing in the codebase or the UI edits, deletes,
+  prunes or exports a row — the trail page exports no actions at all.
+- **`status` and `failure_reason` are varchars, not enums.** The statuses are fixed, but the reasons mirror
+  `SoapFailureReason`, which grows, and adding an enum value would be a DDL change.
+- **`output` is truncated at `MAX_AUDIT_OUTPUT_CHARS` (2000) by the writer**, so a long reply loses its tail in
+  the table and on both pages, which name the limit rather than letting the text appear to end by itself.
+- **The trail page reads one page at a time** (`AUDIT_PAGE_SIZE`, 50, selected with `?page=`) and never counts
+  the table: `hasMore` comes from reading one row past the page, so a page render is one index-ordered scan.
+
+**What the console is not.** A command runs as the site's own console account, so what it does is bounded by what
+the realm lets _that_ account do — not by the visitor's in-game standing. A command that needs a selected player
+or creature cannot work from a console at all: it runs, the console answers with an error, and the operator and
+the trail both see the console's own words. This is not a free-text console either — the catalogue is a whitelist
+on purpose — and the telnet remote console is a different surface entirely (see [Roadmap](#roadmap), item 5).
+
 ## Auth architecture
 
 - The Better Auth instance is [`src/lib/server/auth.ts`](src/lib/server/auth.ts); it is wired into requests through [`src/hooks.server.ts`](src/hooks.server.ts), and ambient types live in [`src/app.d.ts`](src/app.d.ts).
 - The auth tables are the generated ones in `auth.schema.ts`, re-exported alongside the project schema.
 - **Sign-in is Discord only.** [`src/routes/(public)/login/`](<src/routes/(public)/login>) posts to a form action that asks Better Auth for the Discord authorization URL and redirects the browser to it. The scaffold's email/password demo has been deleted.
 - The Discord application must list this redirect URI: `<ORIGIN>/api/auth/callback/discord`.
-- **Authorization is tiered, and it has one home.** [`src/lib/server/authz.ts`](src/lib/server/authz.ts) decides access: `requireUser()` for the `(authenticated)` group, `requireStaff()` for `/staff`, and `requireGameMaster()` / `requireServerManager()` for the folders beneath it. The level is read from `acore_auth` on every request and never cached — see [The tier ladder](#the-tier-ladder). Do not add per-route checks elsewhere. (Note: this is not the Better Auth `admin` plugin; roles are not stored on `user`, because permissions come from AzerothCore.)
+- **Authorization is tiered, and it has one home.** [`src/lib/server/authz.ts`](src/lib/server/authz.ts) decides access: `requireUser()` for the `(authenticated)` group, `requireStaff()` for `/staff`, `requireGameMaster()` / `requireServerManager()` for the folders beneath it, and `requireCommandLevel()` for one command's own level — a route's floor and a command's level answer different questions. The level is read from `acore_auth` on every request and never cached — see [The tier ladder](#the-tier-ladder). Do not add per-route checks elsewhere. (Note: this is not the Better Auth `admin` plugin; roles are not stored on `user`, because permissions come from AzerothCore.)
 
 ## UI & design system
 
@@ -310,10 +422,24 @@ and [`src/lib/vitest-examples/`](src/lib/vitest-examples).
   while the worldserver keeps its own copy in memory until it reloads.
 - **The UI is dark by default.** `app.html` adds `.dark` unless the visitor opted into light mode;
   nothing follows `prefers-color-scheme`.
-- **The console UI is deliberately read-only.** `/staff/gm` can run `.server info`; the command box is
-  still to come, and `/staff/admin` is where it lands.
-- **`/staff/admin` is a placeholder.** The tier-3 route exists so the highest floor is real and testable
-  before the tooling does; what belongs there is roadmap item 4.
+- **`/staff/gm` is still read-only, and the command box sits elsewhere.** That page runs `.server info` and
+  nothing else. The console is at `/staff/moderator/commands`, and it is not a free-text box: the realm's own
+  catalogue is the whitelist, and every attempt is audited.
+- **The site's own check is the enforcement point.** The worldserver's SOAP credential is an administrator, so
+  the server runs whatever the site sends it; what stops a moderator from running a level-3 command is
+  `requireCommandLevel()` in the console's action, which fails closed on a level it could not read.
+- **The catalogue is only as good as the realm's table.** A row carrying the wrong `security` is gated by that
+  number, because the core adopts the same column for its own callers. Populating or correcting `command` is a
+  realm task — this project only reads it — and an empty table leaves nothing runnable.
+- **Console-capability is not in the table.** AzerothCore admits a console caller by an `AllowConsole` flag the
+  table does not carry, so a command that needs a selected player or creature cannot work from here: it runs,
+  the console answers with an error, and the trail records that error rather than a result.
+- **The site's ladder stops at `administrator`.** A level-4 command is listed for reference and is never
+  runnable, because this site is not a console account.
+- **Console output is truncated at 2000 characters.** A long reply has lost its tail in the trail and on both
+  pages, and the missing text was never written down anywhere.
+- **`/staff/admin` is no longer a placeholder.** It hosts the audit trail, gated at `SEC_ADMINISTRATOR` by the
+  folder's own layout; the rest of what belongs at that tier is roadmap item 4.
 - **The icon textures are not in the repository, and not in the image.** `static/interface` is excluded by
   both [`.gitignore`](.gitignore) and [`.dockerignore`](.dockerignore), because the artwork is Blizzard's and
   this repository is not a distribution channel for it. Nothing breaks: an icon that cannot be fetched
@@ -380,11 +506,15 @@ node build/index.js   # serve (PORT, default 3000)
 3. **Close the authorization gate.** _Done_ — `gmlevel` is read from `acore_auth.account_access` for the
    profile's linked game accounts, and each folder under `/staff` enforces its own floor. Remaining: per-realm
    scoping, should a realm model ever exist.
-4. **Characters, bans and live operations.** _Read-only half done_ — an account's characters, their
+4. **Characters, bans and live operations.** _Console done, the rest open_ — an account's characters, their
    equipment and their skills are readable at `/accounts/[username]`, including the characters the account
-   has deleted. Remaining: the staff-facing view of any player, bans and mutes, and every action that
-   changes a live realm (unstuck, rename, console commands). Each action stays unbuilt until it has an
-   audit trail, which is why this is deferred rather than pending.
+   has deleted, and the console at `/staff/moderator/commands` runs the realm's own commands with every
+   attempt recorded in `command_audit` ([`schema.ts`](src/lib/server/db/schema.ts), migrated by
+   [`0002_quick_jack_murdock.sql`](drizzle/0002_quick_jack_murdock.sql)). Remaining: bans and mutes as
+   first-class tools, the staff-facing view of any player, and every other action that changes a live realm
+   (unstuck, rename). The rule is unchanged — an action stays unbuilt until it has an audit trail — and the
+   console satisfies it for console commands specifically, not for actions that would need a record of their
+   own.
 5. **AzerothCore integration rules.** What already applies is in
    [AzerothCore integration](#azerothcore-integration). Before adding features on top: the auth and world
    servers do not communicate with each other at all — they are coupled only through `acore_auth` — and

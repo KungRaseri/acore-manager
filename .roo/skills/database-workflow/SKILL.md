@@ -53,9 +53,17 @@ description: Use when changing the Drizzle schema, generating or applying migrat
 - **`acore_auth.account` is read, never written.** Game accounts are created by the worldserver through
   its own console command (`src/lib/server/accounts/service.ts`), and linking only _reads_ the `salt` and
   `verifier` columns to check a password against them. There is deliberately no Drizzle schema for it.
-- **`game_account` is the project's second table** (see [`.roo/skills/auth-setup`](../auth-setup/SKILL.md)
-  for the auth tables). It maps a `user` row to a game account name, unique on that name. The table is
-  declared in `schema.ts`; its migration still has to be generated with `npm run db:generate`.
+- **`game_account` maps a `user` row to a game account name** (unique on that name; see
+  [`.roo/skills/auth-setup`](../auth-setup/SKILL.md) for the generated auth tables). It is migrated in
+  `drizzle/0001_awesome_tombstone.sql`, and it cascades from `user` because it stores data that belongs to
+  the profile.
+- **`command_audit` is the append-only record of every console command attempt** — the intent, the outcome
+  and the refusals (see [`AGENTS.md`](../../../AGENTS.md) → GM command console & audit trail). Migrated in
+  `drizzle/0002_quick_jack_murdock.sql`. Two things in it are deliberate: `user_id` has **no foreign key to
+  `user`** — a cascade would erase the history of a deleted profile, and the record is not the profile's to
+  delete, so do not "fix" it — and `status` / `failure_reason` are varchars rather than enums, because the
+  reasons follow the SOAP client's failure vocabulary. Nothing prunes the table, and no page edits or
+  deletes a row.
 - The database client must be constructed lazily so `vite build` never needs a live database.
 
 ## Steps
@@ -85,4 +93,6 @@ description: Use when changing the Drizzle schema, generating or applying migrat
 - Commit generated migrations alongside the schema change, and update `AGENTS.md` if the workflow changes.
 - Do not add tables for features that are not designed yet. `game_account` exists because the design was
   settled first — create through the console, then link by verifying the credentials already stored on
-  the server — and the next integration table should be justified the same way, security rules included.
+  the server — and `command_audit` arrived the same way, with the design note that fixed the console's
+  execution order and its two-phase write. The next integration table should be justified the same way,
+  security rules included.

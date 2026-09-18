@@ -30,7 +30,8 @@ description: Use when building or changing SvelteKit routes, pages, layouts, com
 - [`src/routes/`](../../../src/routes) — routes in three groups: `(public)`, `(authenticated)`, `(staff)`.
 - [`src/lib/server/`](../../../src/lib/server) — server-only code (`auth.ts`, `authz.ts`, `db/`, `acore/`).
 - [`src/lib/server/authz.ts`](../../../src/lib/server/authz.ts) — `requireUser`, `requireStaff`,
-  `requireGameMaster`, `requireServerManager`.
+  `requireGameMaster`, `requireServerManager`, and `requireCommandLevel` (one command's own level, checked
+  per request in the console's action).
 
 ## Key facts
 
@@ -38,12 +39,16 @@ description: Use when building or changing SvelteKit routes, pages, layouts, com
 - **Routes are grouped, and the layout owns the rule:** `(public)` serves anonymous pages,
   `(authenticated)` is gated by `requireUser()` (redirecting to `/login?redirectTo=…`), and `(staff)` is
   the staff area, where `/staff/moderator`, `/staff/gm` and `/staff/admin` each declare their own floor
-  on their own layout (403 below it). Parentheses keep the folder out of the URL, and two groups cannot
-  both own `/`. A layout cannot import `$lib/server`, so an authorization fact is computed in
-  `+layout.server.ts` and passed down as data.
+  on their own layout (403 below it). A **nested** folder with a page declares its floor the same way —
+  `/staff/moderator/commands` (floor 1), `/staff/admin/audit` (floor 3) — and
+  [`staff-routes.spec.ts`](../../../src/lib/server/staff-routes.spec.ts) finds that declaration by
+  searching the layout's text, **comments included**, so each layout names exactly one `require*` helper.
+  Parentheses keep the folder out of the URL, and two groups cannot both own `/`. A layout cannot import
+  `$lib/server`, so an authorization fact is computed in `+layout.server.ts` and passed down as data.
 - **A form action is not covered by its layout.** SvelteKit runs an action _before_ the page's load
   functions, so a layout's 403 arrives after the action has already run. An action that changes anything
-  gated calls a `require*` helper itself.
+  gated calls a `require*` helper itself — the command console's `run` action re-checks the tier, the
+  command's own level against the catalogue, the arguments and a typed confirmation for exactly this reason.
 - **Svelte 5 runes** are compiler keywords — no import needed:
   - `$state` → deeply reactive proxies; `$state.raw` (reassign-only), `$state.snapshot` (unproxy).
   - `$derived` / `$derived.by` → derived values; keep the expressions free of side effects.
