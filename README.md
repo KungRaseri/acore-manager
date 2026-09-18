@@ -11,17 +11,17 @@ A server and player management website for AzerothCore (World of Warcraft 3.3.5a
 
 ## Stack
 
-| Concern     | Choice                                                                                                               |
-| ----------- | -------------------------------------------------------------------------------------------------------------------- |
-| Framework   | SvelteKit 2 + Svelte 5 (runes mode forced in `vite.config.ts`)                                                       |
-| Language    | TypeScript, strict, ESM (`"type": "module"`)                                                                         |
-| Styling     | Tailwind CSS 4 (CSS-first, no `tailwind.config.js`)                                                                  |
-| UI          | Skeleton v5 + Bits UI (headless primitives) + Lucide icons + Simple Icons brand marks — **installed, not yet wired** |
-| Database    | MySQL via Drizzle ORM + drizzle-kit (`mysql2` driver)                                                                |
-| Auth        | Better Auth — Discord OAuth, email/password disabled                                                                 |
-| Build       | Vite 7                                                                                                               |
-| Test        | Vitest 3 (`client` project on jsdom + `server` node project, via `@testing-library/svelte`) + Playwright (e2e only)  |
-| Lint/format | ESLint (flat config) + Prettier (tabs, `printWidth` 100, Svelte + Tailwind plugins)                                  |
+| Concern     | Choice                                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------- |
+| Framework   | SvelteKit 2 + Svelte 5 (runes mode forced in `vite.config.ts`)                                                      |
+| Language    | TypeScript, strict, ESM (`"type": "module"`)                                                                        |
+| Styling     | Tailwind CSS 4 (CSS-first, no `tailwind.config.js`)                                                                 |
+| UI          | Skeleton v5 + Bits UI (headless primitives) + Lucide icons + Simple Icons brand marks — **wired; theme `azeroth`**  |
+| Database    | MySQL via Drizzle ORM + drizzle-kit (`mysql2` driver)                                                               |
+| Auth        | Better Auth — Discord OAuth, email/password disabled                                                                |
+| Build       | Vite 7                                                                                                              |
+| Test        | Vitest 3 (`client` project on jsdom + `server` node project, via `@testing-library/svelte`) + Playwright (e2e only) |
+| Lint/format | ESLint (flat config) + Prettier (tabs, `printWidth` 100, Svelte + Tailwind plugins)                                 |
 
 ## Requirements
 
@@ -113,7 +113,7 @@ gated. Note that `test:unit` runs Vitest in watch mode, so CI and one-shot runs 
 - `src/lib/server/db/auth.schema.ts` is **generated** — regenerate it with `npm run auth:schema`
   after changing the Better Auth config, and never hand-edit it.
 - Edit the schema → `npm run db:generate` → `npm run db:migrate` (or `db:push` while developing).
-- Sign-in is **Discord only** — `src/routes/login/` starts the OAuth flow. Add
+- Sign-in is **Discord only** — `src/routes/(public)/login/` starts the OAuth flow. Add
   `<ORIGIN>/api/auth/callback/discord` as a redirect URI on the Discord application.
 - Keep database and auth construction lazy (`getDb()` / `getAuth()` build on first use, never at
   module scope) so that `vite build` — including SvelteKit's post-build analysis — does not need a
@@ -128,13 +128,15 @@ gated. Note that `test:unit` runs Vitest in watch mode, so CI and one-shot runs 
 
 ## UI foundation
 
-Skeleton v5, Bits UI, Lucide and Simple Icons are installed but the global stylesheet has not been
-wired up yet. The planned arrangement is:
+Skeleton v5, Bits UI, Lucide and Simple Icons are installed, and the global stylesheet that wires
+them is `src/routes/layout.css`:
 
-- `src/routes/layout.css` imports Tailwind, the Skeleton core stylesheet, and one Skeleton theme.
-- A theme is activated with `data-theme="<name>"` on the `<html>` element in `src/app.html`.
-- Skeleton ships 24 built-in themes; `pine` is the placeholder carried over from the previous
-  project and may be replaced. No theme has been chosen for this project yet.
+- `src/routes/layout.css` imports Tailwind, the Skeleton core stylesheet, the Skeleton component
+  styles, then the project theme last, so the theme's tokens win.
+- The project theme is `azeroth` — `src/themes/azeroth.css` — activated with `data-theme="azeroth"`
+  on the `<html>` element in `src/app.html`. No built-in preset theme is in use.
+- Light/dark mode is class-based rather than media-based: the pre-paint script in `src/app.html`
+  adds `.dark` unless the visitor opted into light mode, and `ModeToggle.svelte` toggles it.
 
 See [`.roo/skills/ui-development/SKILL.md`](.roo/skills/ui-development/SKILL.md) and the
 [`llms/skeletondev/`](llms/skeletondev) reference for the full component and token inventory.
