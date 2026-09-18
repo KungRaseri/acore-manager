@@ -2,10 +2,11 @@
 
 A server and player management website for AzerothCore (World of Warcraft 3.3.5a) servers.
 
-> **Status: sign-in, game accounts and tiered staff access all work.** Discord sign-in, the database
-> bootstrap, the container build, game account creation and linking, and the AzerothCore GM-level gate
-> behind the `/staff` area are in place. Characters, bans and live operations are not — see
-> [Roadmap](#roadmap).
+> **Status: sign-in, game accounts, characters and tiered staff access all work.** Discord sign-in, the
+> database bootstrap, the container build, account creation and linking, the AzerothCore GM-level gate
+> behind `/staff`, and read-only character browsing — an account's characters, their equipment and skills,
+> and the characters the account has deleted — are in place. Bans, live operations and anything that
+> changes a realm are not — see [Roadmap](#roadmap).
 
 ## Stack
 
@@ -170,5 +171,8 @@ The same two commands work outside Docker — that is exactly what the container
 2. **Game accounts and the access gate** — _done_: accounts are created through the worldserver's own
    console and linked to a profile, and the GM level on the linked account decides what `/staff` shows
    and what it lets you do.
-3. **Characters, bans and live operations** — the rest of the management domain, on top of
-   `acore_characters` and the SOAP console.
+3. **Characters** — _done, read-only_: `/accounts/[username]` lists an account's characters and the ones it
+   has deleted, and each character opens to its equipment and skills.
+4. **Bans, live operations, and anything that acts** — the rest of the management domain. Every action that
+   changes a realm (`unstuck`, rename, console commands) needs an audit trail before it can exist, so this
+   stays open deliberately.

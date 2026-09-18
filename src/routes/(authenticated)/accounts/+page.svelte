@@ -2,6 +2,7 @@
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
 	import SwordsIcon from '@lucide/svelte/icons/swords';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -56,7 +57,17 @@
 						<div class="flex items-center gap-3">
 							<SwordsIcon class="size-5 text-primary-500" />
 							<div class="flex flex-col">
-								<span class="font-medium">{account.username}</span>
+								<!-- The account's own page: its characters, and each character in
+								     turn. Ownership is proved again there, so this link grants
+								     nothing the visitor does not already have. -->
+								<a
+									class="anchor font-medium"
+									href={resolve('/(authenticated)/accounts/[username]', {
+										username: account.username
+									})}
+								>
+									{account.username}
+								</a>
 								<span class="text-xs opacity-70">
 									{#if account.email === ''}
 										No email on the account

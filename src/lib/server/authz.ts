@@ -2,6 +2,11 @@ import { eq } from 'drizzle-orm';
 import { error, redirect } from '@sveltejs/kit';
 import { PLAYER_ACCESS, SEC_PLAYER, tierAtLeast, tierForLevel, type Access } from '$lib/access';
 import { readAccountLevels } from '$lib/server/acore/access';
+import {
+	readOwnedAccount,
+	type AccountOwner,
+	type OwnedAccount
+} from '$lib/server/accounts/ownership';
 import { getDb } from '$lib/server/db';
 import { gameAccount } from '$lib/server/db/schema';
 import type { CurrentUser } from '$lib/user';
@@ -171,6 +176,42 @@ export function requireServerManager(access: Access): void {
 	if (!isServerManager(access)) {
 		error(403, 'Your account is not allowed to manage this server.');
 	}
+}
+
+/**
+ * The game account named by `username`, if it is on this realm **and** belongs to
+ * this profile.
+ *
+ * ## A per-resource rule, not a tier
+ *
+ * The `require*` helpers above answer "what tier is this user?" once for a whole
+ * area. This one answers "is this particular thing theirs?", per request, for the
+ * account whose page is being opened — the tiers say nothing about it. It sits
+ * here because authorization has one home, and because every account-scoped route
+ * **and action** has to call it: an action is not covered by a layout (see above),
+ * and a page that forgot this check would serve any account whose name a visitor
+ * could guess.
+ *
+ * The decision itself is [`isOwnedByProfile`](src/lib/server/accounts/ownership.ts):
+ * a `game_account` link, or the account carrying the visitor's Discord address.
+ *
+ * ## 404, deliberately
+ *
+ * An account that does not exist and an account that belongs to somebody else get
+ * the same answer, so this cannot be used to work out which names are taken — the
+ * same reasoning the link form uses when it refuses to say whether a name exists.
+ */
+export async function requireOwnedAccount(
+	owner: AccountOwner,
+	username: string
+): Promise<OwnedAccount> {
+	const account = await readOwnedAccount(owner, username);
+
+	if (!account) {
+		error(404, 'That game account is not on this realm, or it is not linked to your profile.');
+	}
+
+	return account;
 }
 
 /**

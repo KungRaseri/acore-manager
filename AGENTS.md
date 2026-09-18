@@ -26,16 +26,19 @@ acore-manager is a **server and player management website for AzerothCore** (Wor
 | [`src/lib/server/db/schema.ts`](src/lib/server/db/schema.ts)           | **Schema source of truth**                                                                 |
 | [`src/lib/server/db/auth.schema.ts`](src/lib/server/db/auth.schema.ts) | **Generated** Better Auth tables — never hand-edit                                         |
 | [`src/lib/assets/`](src/lib/assets)                                    | Assets imported by components                                                              |
-| [`static/`](static)                                                    | Served as-is from the site root                                                            |
+| [`static/`](static)                                                    | Served as-is from the site root; holds the extracted item icons (git-ignored)              |
 | [`src/themes/azeroth.css`](src/themes/azeroth.css)                     | The project's Skeleton theme — design tokens for `data-theme="azeroth"`                    |
 | [`src/lib/components/site/`](src/lib/components/site)                  | Site chrome: app shell, navigation, user menu, mode toggle                                 |
+| [`src/lib/components/characters/`](src/lib/components/characters)      | Character pages: the item icon with its placeholder fallback                               |
 | [`src/lib/navigation.ts`](src/lib/navigation.ts)                       | Navigation data and the active-item rule                                                   |
 | [`src/lib/user.ts`](src/lib/user.ts)                                   | `CurrentUser` — the user shape the UI is allowed to see                                    |
 | [`src/lib/auth-client.ts`](src/lib/auth-client.ts)                     | Browser-side Better Auth client (sign-out; later account linking)                          |
 | [`src/lib/server/authz.ts`](src/lib/server/authz.ts)                   | Authorization — the one place that answers "may this user do this?"                        |
 | [`src/lib/access.ts`](src/lib/access.ts)                               | The tier vocabulary — `SEC_*` constants and the level-to-tier mapping                      |
 | [`src/lib/server/acore/access.ts`](src/lib/server/acore/access.ts)     | GM levels read from `acore_auth.account_access`, one query, read-only                      |
-| [`src/lib/server/accounts/`](src/lib/server/accounts)                  | Game accounts — console provisioning, SRP6 credential check, linking                       |
+| [`src/lib/server/accounts/`](src/lib/server/accounts)                  | Game accounts — console provisioning, SRP6 credential check, linking, ownership            |
+| [`src/lib/server/characters/`](src/lib/server/characters)              | Characters — reads on `acore_characters`, names and items from `acore_world`               |
+| [`src/lib/characters.ts`](src/lib/characters.ts)                       | Character vocabulary — money, playtime, timestamps, quality, slot labels, icon URLs        |
 | [`.roo/skills/`](.roo/skills)                                          | Reusable agent skills; catalog in [`.roo/skills/README.md`](.roo/skills/README.md)         |
 | [`llms/`](llms)                                                        | Third-party `llms.txt` reference corpora; provenance in [`llms/README.md`](llms/README.md) |
 | [`.github/workflows/`](.github/workflows)                              | CI                                                                                         |
@@ -164,6 +167,7 @@ Access is the GM level on the game accounts linked to a profile, read from `acor
 - **Nothing is cached.** The level is resolved on every request and memoised only within that request, so a change applies to the next request and there is no stale state. The cost is two indexed queries per signed-in request.
 - **It fails closed.** A level that cannot be read — AzerothCore unreachable, `ACORE_DATABASE_URL` unset — means `player`, logged, never a 500 and never staff access.
 - A profile with no linked game account has no level and sees no staff page; linking one on the accounts page is the prerequisite.
+- **Ownership is a different question from the tier**, and it has its own helper. `requireOwnedAccount()` answers "is _this_ game account this visitor's?" for the account whose page is being opened. An account belongs to a profile when a `game_account` row links it, or when `account.email` is the profile's Discord address — the same rule the accounts page lists by, defined once in [`ownership.ts`](src/lib/server/accounts/ownership.ts) so the page and the URL behind it can never disagree. It answers 404 for "not yours" and "not there" alike, so it cannot be used to work out which names exist.
 
 ## AzerothCore integration
 
@@ -215,6 +219,47 @@ Creating and linking a game account lives in [`src/lib/server/accounts/`](src/li
 - **Unlinking deletes the mapping row only.** The game account, its characters and its password are
   untouched. Deleting an account is a server operation with consequences the UI cannot undo, so it is not
   offered.
+
+## Characters
+
+Characters are **read-only**, from `acore_characters` in
+[`src/lib/server/characters/`](src/lib/server/characters):
+
+- **Two pages, one ownership proof.** `/accounts/[username]` lists an account's characters and the ones it
+  has deleted; `/accounts/[username]/characters/[guid]` opens one. The account name in the URL is a claim,
+  not a permission: [`requireOwnedAccount()`](src/lib/server/authz.ts) proves it, and the guid is then
+  looked up **scoped to that account** — a guid is a small integer, so counting upwards must never be a way
+  to read somebody else's character.
+- **Names come from the server, never from a list kept here.** Race, class, zone, skill and item names are
+  read out of `acore_world` — `chrraces_dbc`, `chrclasses_dbc`, `areatable_dbc`, `skillline_dbc`,
+  `itemdisplayinfo_dbc` and `item_template` — because the client renders those same tables. A hardcoded list
+  would drift from what players see the moment a custom race or a renamed skill exists.
+- **Deleted characters are a feature, not a leak.** AzerothCore does not remove a deleted character: it
+  moves the identity aside into `deleteInfos_Name` / `deleteInfos_Account` / `deleteDate` and blanks `name`
+  and `account`. The list therefore filters on `deleteInfos_Account` and reads the name back — a query
+  against `account` returns nothing at all, which is the kind of bug that looks like an empty list.
+- **Nothing on those pages acts.** No console command and no write: changing a character is deliberately
+  not built yet, and whatever does act will need an audit trail first.
+- **Item icons are the one thing not in a database.** `itemdisplayinfo_dbc` gives the icon's _name_, but the
+  image is a texture inside the client's MPQ archives, so the extracted files live in
+  `static/interface/Icons` and are served from this site — a player's browser fetches item icons here and
+  nowhere else (see [`.env.example`](.env.example) for the one override). **The name is used verbatim and
+  must never be normalised:** the client's own DBC is inconsistently cased, so `INV_Sword_106` really does
+  sit beside `INV_SWORD_107`, and the extracted files match it exactly. Lowercasing the name would 404 most
+  icons on a case-sensitive filesystem, which is what the container runs on.
+- **A realm may have no icon names at all.** `itemdisplayinfo_dbc` is the world database's mirror of the
+  client's `ItemDisplayInfo.dbc`, and AzerothCore's base SQL ships it **empty** — `LOAD_DBC` takes both the
+  `.dbc` file and the table name, so a worldserver reads the file from its own data directory and a realm
+  never needs the table populated. When it is empty, every item icon falls back to the placeholder, and the
+  app logs one warning naming the cause rather than looking broken in silence.
+- **Filling that table is a realm-owner task, and it is documented.** AzerothCore's own guide,
+  [How to import DBC data in the DB](https://www.azerothcore.org/wiki/how-to-import-dbc-data-in-db), uses
+  [`node-dbc-reader`](https://github.com/wowgaming/node-dbc-reader) against the client's `.dbc` files to
+  emit `INSERT` statements for those tables. This project **never writes into `acore_world`** — it only
+  reads — so an unpopulated table is fixed on the realm, not here.
+- **Skills are listed flat.** The world database ships no `skilllinecategory_dbc`, so nothing authoritative
+  separates professions from weapon and language skills. Ordering by value puts trained professions first; a
+  curated split would need a verified list of profession ids.
 
 ## Auth architecture
 
@@ -268,6 +313,14 @@ and [`src/lib/vitest-examples/`](src/lib/vitest-examples).
   still to come, and `/staff/admin` is where it lands.
 - **`/staff/admin` is a placeholder.** The tier-3 route exists so the highest floor is real and testable
   before the tooling does; what belongs there is roadmap item 4.
+- **The icon textures are not in the repository, and not in the image.** `static/interface` is excluded by
+  both [`.gitignore`](.gitignore) and [`.dockerignore`](.dockerignore), because the artwork is Blizzard's and
+  this repository is not a distribution channel for it. Nothing breaks: an icon that cannot be fetched
+  renders as a placeholder rather than a broken image, so a deployment without the files shows no pictures
+  until they are mounted in or `ICON_BASE_URL` points at a host that has them.
+- **A deleted character stays visible to the account that deleted it.** That is the point of the view, but
+  it also means a character removed for a reason that was meant to be decisive is still listed to its owner
+  until AzerothCore prunes it.
 - **e2e tests need a live database and downloaded browsers**, so `npm run test:e2e` is not part of routine
   verification — but `playwright test` does expect at least one matching spec.
 
@@ -283,8 +336,11 @@ the database before starting the server:
 - [`migrate.mjs`](migrate.mjs) — creates the database (`CREATE DATABASE IF NOT EXISTS`, utf8mb4) before
   running `drizzle-orm/mysql2/migrator`, retries while the database is still starting, and fails with an
   actionable message when the user lacks `CREATE` rights. Both steps are idempotent, so restarts are no-ops.
-- [`.dockerignore`](.dockerignore) — keeps `.env` and `node_modules` out of the build context; without it
-  `COPY . .` would bake real credentials into an image layer.
+- [`.dockerignore`](.dockerignore) — keeps `.env`, `node_modules` **and `static/interface`** out of the build
+  context. The first matters because `COPY . .` would otherwise bake real credentials into an image layer;
+  the last is deliberate too, so the extracted client textures are not distributed inside an image. A
+  deployment that wants icons has to supply them itself — mounting them under the runtime's
+  `build/client/interface` directory, or pointing `ICON_BASE_URL` at a host that serves them.
 
 Runtime environment: `DATABASE_URL`, `ORIGIN`, `BETTER_AUTH_SECRET`, `DISCORD_CLIENT_ID`,
 `DISCORD_CLIENT_SECRET`. **`ORIGIN` must be the browser-facing origin** or adapter-node rejects
@@ -323,8 +379,11 @@ node build/index.js   # serve (PORT, default 3000)
 3. **Close the authorization gate.** _Done_ — `gmlevel` is read from `acore_auth.account_access` for the
    profile's linked game accounts, and each folder under `/staff` enforces its own floor. Remaining: per-realm
    scoping, should a realm model ever exist.
-4. **Characters, bans and live operations** — the rest of the management domain, on top of
-   `acore_characters` and the SOAP console.
+4. **Characters, bans and live operations.** _Read-only half done_ — an account's characters, their
+   equipment and their skills are readable at `/accounts/[username]`, including the characters the account
+   has deleted. Remaining: the staff-facing view of any player, bans and mutes, and every action that
+   changes a live realm (unstuck, rename, console commands). Each action stays unbuilt until it has an
+   audit trail, which is why this is deferred rather than pending.
 5. **AzerothCore integration rules.** What already applies is in
    [AzerothCore integration](#azerothcore-integration). Before adding features on top: the auth and world
    servers do not communicate with each other at all — they are coupled only through `acore_auth` — and
